@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Card Grid Splitter</title>
+    <title>Card Sheet Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -57,6 +57,10 @@
         .section-toggle-icon{transition:transform .2s}
         .section-collapsed .section-toggle-icon{transform:rotate(-90deg)}
         .section-collapsed .section-body{max-height:0!important}
+
+        /* Edit controls panel: scrollable fixed height on mobile, full on desktop */
+        #edit-controls-panel{max-height:min(240px,38dvh)}
+        @media(min-width:768px){#edit-controls-panel{max-height:none;flex:1}}
 
         /* Review grid: each card is a fixed-size column, grid scrolls */
         #review-grid{
@@ -112,7 +116,7 @@
             <span class="w-5 h-0.5 bg-slate-300 rounded"></span><span class="w-5 h-0.5 bg-slate-300 rounded"></span><span class="w-5 h-0.5 bg-slate-300 rounded"></span>
         </button>
         <div class="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center text-lg">🃏</div>
-        <h1 class="text-base font-semibold whitespace-nowrap">Card Grid Splitter</h1>
+        <h1 class="text-base font-semibold whitespace-nowrap">Card Sheet Generator</h1>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
         <button onclick="openSelectModal()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-2xl font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors">
@@ -171,7 +175,7 @@
                         <div><label class="text-xs text-slate-400 block mb-1">Width (mm)</label><input type="number" id="card-width-mm" value="63" min="1" max="200" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-center text-sm" oninput="updateCardSize()"></div>
                         <div><label class="text-xs text-slate-400 block mb-1">Height (mm)</label><input type="number" id="card-height-mm" value="88" min="1" max="300" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-center text-sm" oninput="updateCardSize()"></div>
                     </div>
-                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Radius (mm)</span><input type="range" id="corner-radius-mm" min="0" max="15" value="3" step="0.5" oninput="syncNum('corner-radius-mm');updatePreview()" class="flex-1 accent-emerald-500"><input type="number" id="corner-radius-mm-num" value="3" min="0" max="15" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('corner-radius-mm').value=this.value;updatePreview()"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Radius (mm)</span><input type="range" id="corner-radius-mm" min="0" max="15" value="4" step="0.5" oninput="syncNum('corner-radius-mm');updatePreview()" class="flex-1 accent-emerald-500"><input type="number" id="corner-radius-mm-num" value="4" min="0" max="15" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('corner-radius-mm').value=this.value;updatePreview()"></div>
                     <div id="radius-info" class="text-xs text-slate-600 text-right h-3"></div>
                 </div>
             </div>
@@ -183,6 +187,44 @@
                     <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Grid (px)</span><input type="range" id="line-grid" min="0.5" max="10" value="2" step="0.5" oninput="syncNum('line-grid');updatePreview()" class="flex-1 accent-red-500"><input type="number" id="line-grid-num" value="2" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-grid').value=this.value;updatePreview()"></div>
                     <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Crop (px)</span><input type="range" id="line-crop" min="0.5" max="10" value="3" step="0.5" oninput="syncNum('line-crop');updatePreview()" class="flex-1 accent-emerald-500"><input type="number" id="line-crop-num" value="3" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-crop').value=this.value;updatePreview()"></div>
                     <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Selection (px)</span><input type="range" id="line-sel" min="0.5" max="10" value="2" step="0.5" oninput="syncNum('line-sel');renderSelectionOverlays()" class="flex-1 accent-emerald-500"><input type="number" id="line-sel-num" value="2" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-sel').value=this.value;renderSelectionOverlays()"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-wrap">
+            <button class="section-header w-full flex items-center justify-between text-xs uppercase tracking-widest text-slate-400 mb-1 py-0.5" onclick="toggleSection(this)"><span>Tile Padding (px)</span><span class="section-toggle-icon text-slate-500">▾</span></button>
+            <div class="section-body" style="max-height:360px">
+                <div class="pt-1 space-y-2">
+                    <p class="text-xs text-slate-500 leading-relaxed">Inner padding per card cell. Blue outline shows the active area + corner radius preview.</p>
+                    <div><label class="text-xs text-slate-400">Left</label>
+                        <div class="flex gap-2 items-center mt-0.5">
+                            <input type="range" id="tile-pad-left" min="0" max="200" value="0" step="1" oninput="updateTilePad()" class="flex-1 accent-blue-500">
+                            <input type="number" id="tile-pad-left-num" value="0" min="0" step="1" class="w-14 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="syncTilePadFromNum('left')">
+                        </div>
+                    </div>
+                    <div><label class="text-xs text-slate-400">Right</label>
+                        <div class="flex gap-2 items-center mt-0.5">
+                            <input type="range" id="tile-pad-right" min="0" max="200" value="0" step="1" oninput="updateTilePad()" class="flex-1 accent-blue-500">
+                            <input type="number" id="tile-pad-right-num" value="0" min="0" step="1" class="w-14 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="syncTilePadFromNum('right')">
+                        </div>
+                    </div>
+                    <div><label class="text-xs text-slate-400">Top</label>
+                        <div class="flex gap-2 items-center mt-0.5">
+                            <input type="range" id="tile-pad-top" min="0" max="200" value="0" step="1" oninput="updateTilePad()" class="flex-1 accent-blue-500">
+                            <input type="number" id="tile-pad-top-num" value="0" min="0" step="1" class="w-14 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="syncTilePadFromNum('top')">
+                        </div>
+                    </div>
+                    <div><label class="text-xs text-slate-400">Bottom</label>
+                        <div class="flex gap-2 items-center mt-0.5">
+                            <input type="range" id="tile-pad-bottom" min="0" max="200" value="0" step="1" oninput="updateTilePad()" class="flex-1 accent-blue-500">
+                            <input type="number" id="tile-pad-bottom-num" value="0" min="0" step="1" class="w-14 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="syncTilePadFromNum('bottom')">
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                        <span class="text-xs text-slate-400" style="min-width:60px">Line (px)</span>
+                        <input type="range" id="tile-pad-line" min="0.5" max="10" value="2" step="0.5" oninput="syncNum('tile-pad-line');updatePreview()" class="flex-1 accent-blue-500">
+                        <input type="number" id="tile-pad-line-num" value="2" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('tile-pad-line').value=this.value;updatePreview()">
+                    </div>
                 </div>
             </div>
         </div>
@@ -325,6 +367,11 @@
                 <button onclick="generatePDF()" id="pdf-gen-btn" class="w-full px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-semibold transition-colors text-sm">
                     Generate PDF Preview
                 </button>
+
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="pdf-summary-page" checked class="w-4 h-4 accent-emerald-500 rounded">
+                    <span class="text-xs text-slate-300">Include summary page (last)</span>
+                </label>
             </div>
 
             <div class="flex-1 bg-slate-950 p-2 flex flex-col" style="min-height:200px;">
@@ -346,9 +393,9 @@
             <button onclick="document.getElementById('edit-modal').classList.remove('open')" class="w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded-xl">✕</button>
         </div>
         <div class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-            <!-- Zoomable/pannable canvas -->
-            <div class="flex-1 bg-slate-950 flex flex-col p-3 min-h-0 min-w-0" style="min-height:300px;">
-                <div id="edit-canvas-wrap" onwheel="editZoomWheel(event)">
+            <!-- Zoomable/pannable canvas — takes all available space -->
+            <div class="bg-slate-950 flex flex-col p-3 min-w-0" style="flex:1 1 0;min-height:220px;">
+                <div id="edit-canvas-wrap" onwheel="editZoomWheel(event)" style="flex:1;min-height:0;">
                     <canvas id="edit-canvas"></canvas>
                 </div>
                 <div class="flex gap-2 mt-2 flex-shrink-0">
@@ -356,8 +403,8 @@
                     <span class="text-xs text-slate-500 self-center">Scroll to zoom · Drag to pan</span>
                 </div>
             </div>
-            <!-- Controls -->
-            <div class="w-full md:w-64 bg-slate-900 flex flex-col p-4 gap-3 flex-shrink-0 overflow-y-auto">
+            <!-- Controls — scrollable on mobile, full height sidebar on desktop -->
+            <div class="w-full md:w-64 bg-slate-900 flex flex-col p-4 gap-3 flex-shrink-0 overflow-y-auto md:overflow-y-auto" style="max-height:none;" id="edit-controls-panel">
                 <div class="text-xs uppercase tracking-widest text-slate-400 mb-1">Trim (px)</div>
                 <div>
                     <div class="flex items-center justify-between mb-1"><label class="text-xs text-slate-400">Left</label><span id="el-val" class="text-xs text-slate-300 font-mono">0</span></div>
@@ -416,6 +463,21 @@ let isDraggingBox=false,dragStartX=0,dragStartY=0,pIsPanning=false;
 let slicedCards=[],cardBackDataUrl=null,editingCardId=null;
 let eZoom=1,ePanX=0,ePanY=0,eIsPanning=false,eTouchState=null,eLastX=0,eLastY=0;
 let ctxCardId=null;
+let tilePad={left:0,right:0,top:0,bottom:0};
+
+function updateTilePad(){
+    ['left','right','top','bottom'].forEach(d=>{
+        tilePad[d]=parseInt(document.getElementById(`tile-pad-${d}`).value)||0;
+        document.getElementById(`tile-pad-${d}-num`).value=tilePad[d];
+    });
+    updatePreview();renderSelectionOverlays();
+}
+function syncTilePadFromNum(dir){
+    const v=parseInt(document.getElementById(`tile-pad-${dir}-num`).value)||0;
+    tilePad[dir]=v;
+    document.getElementById(`tile-pad-${dir}`).value=v;
+    updatePreview();renderSelectionOverlays();
+}
 
 /* ════ UI ════ */
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');}
@@ -555,6 +617,31 @@ function drawGridOnCanvas(canvas,src,scan,cz){
     ctx.strokeStyle='#ef4444';ctx.lineWidth=gt;
     for(let i=1;i<scan.cols;i++){ctx.beginPath();ctx.moveTo(l+i*tileW,t);ctx.lineTo(l+i*tileW,H-b);ctx.stroke();}
     for(let i=1;i<scan.rows;i++){ctx.beginPath();ctx.moveTo(l,t+i*tileH);ctx.lineTo(W-r,t+i*tileH);ctx.stroke();}
+
+    // Blue tile-padding inset highlight — with configurable thickness and corner-radius preview
+    const pad=tilePad;
+    if(pad.left||pad.right||pad.top||pad.bottom){
+        const padLineThick=(parseFloat(document.getElementById('tile-pad-line').value)||2)/cz;
+        const alpha=Math.min(1,Math.max(0.25, 1 - (cz-1)*0.12)); // fade slightly when zoomed in
+        ctx.strokeStyle=`rgba(59,130,246,${alpha})`;
+        ctx.lineWidth=padLineThick;
+        ctx.setLineDash([padLineThick*4,padLineThick*2]);
+        for(let row=0;row<scan.rows;row++)for(let col=0;col<scan.cols;col++){
+            const tx=l+col*tileW+pad.left, ty=t+row*tileH+pad.top;
+            const tw=tileW-pad.left-pad.right, th=tileH-pad.top-pad.bottom;
+            if(tw>2&&th>2){
+                if(pixelRadius>0.5){
+                    // Show corner radius clipped to the padded area
+                    const padRadius=Math.min(pixelRadius,tw/2,th/2);
+                    ctx.beginPath();roundRectPath(ctx,tx,ty,tw,th,padRadius);ctx.stroke();
+                } else {
+                    ctx.strokeRect(tx,ty,tw,th);
+                }
+            }
+        }
+        ctx.setLineDash([]);
+    }
+
     return{l,t,r,b,tileW,tileH,pixelRadius};
 }
 function updatePreview(){
@@ -574,10 +661,14 @@ function renderSelectionOverlays(){
     const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
     const pr=Math.round((radiusMM/(currentScan.cardWidthMM||63))*tileW);
     const bp=(parseFloat(document.getElementById('line-sel').value)||2)/zoom;
+    const pad=tilePad;
     currentScan.selectedTiles.forEach(i=>{
         const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);
         const div=document.createElement('div');div.className='tile-overlay';
-        div.style.left=(l+col*tileW)+'px';div.style.top=(t+row*tileH)+'px';div.style.width=tileW+'px';div.style.height=tileH+'px';
+        div.style.left=(l+col*tileW+pad.left)+'px';
+        div.style.top=(t+row*tileH+pad.top)+'px';
+        div.style.width=(tileW-pad.left-pad.right)+'px';
+        div.style.height=(tileH-pad.top-pad.bottom)+'px';
         div.style.borderWidth=bp+'px';div.style.setProperty('--tile-radius',pr+'px');
         c.appendChild(div);
     });
@@ -694,6 +785,7 @@ popupWrap.addEventListener('touchend',e=>{
 });
 
 function popupToggleTileAtPx(cx,cy){
+    // Click detection stays on full tile cell — padding is visual only
     if(!currentScan)return;
     const canvas=document.getElementById('popup-canvas');const W=canvas.width,H=canvas.height;
     const imgX=(cx-pPanX)/pZoom,imgY=(cy-pPanY)/pZoom;
@@ -738,10 +830,15 @@ function popupRenderOverlays(){
     const pixelRadius=Math.round((radiusMM/(currentScan.cardWidthMM||63))*tileW);
     const sb=Math.max(1,(parseFloat(document.getElementById('line-sel').value)||2)/pZoom);
     const total=currentScan.cols*currentScan.rows;
+    const pad=tilePad;
     for(let i=0;i<total;i++){
         const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);const sel=currentScan.selectedTiles.has(i);
         const div=document.createElement('div');div.className='popup-tile-overlay';
-        div.style.left=(l+col*tileW)+'px';div.style.top=(t+row*tileH)+'px';div.style.width=tileW+'px';div.style.height=tileH+'px';div.style.setProperty('--tile-radius',pixelRadius+'px');
+        div.style.left=(l+col*tileW+pad.left)+'px';
+        div.style.top=(t+row*tileH+pad.top)+'px';
+        div.style.width=(tileW-pad.left-pad.right)+'px';
+        div.style.height=(tileH-pad.top-pad.bottom)+'px';
+        div.style.setProperty('--tile-radius',pixelRadius+'px');
         div.style.border=sel?`${sb}px solid #22c55e`:`${sb}px solid rgba(255,255,255,0.08)`;
         div.style.background=sel?'rgba(134,239,172,.25)':'transparent';
         container.appendChild(div);
@@ -780,15 +877,19 @@ function sliceCardsAndReview(){
 
     for(const i of sorted){
         const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);
-        const sx=l+col*tileW,sy=t+row*tileH;
-        off.width=Math.round(tileW);off.height=Math.round(tileH);
+        // Apply tile padding offset to the slice coordinates
+        const pad=tilePad;
+        const sx=l+col*tileW+pad.left, sy=t+row*tileH+pad.top;
+        const sw=tileW-pad.left-pad.right, sh=tileH-pad.top-pad.bottom;
+        off.width=Math.round(Math.max(1,sw));off.height=Math.round(Math.max(1,sh));
         ctx.clearRect(0,0,off.width,off.height);
-        ctx.drawImage(src,sx,sy,tileW,tileH,0,0,off.width,off.height);
+        ctx.drawImage(src,sx,sy,sw,sh,0,0,off.width,off.height);
         const originalDataUrl=off.toDataURL('image/png');
-        if(pixelRadius>0.5){
+        const effPixelRadius=(radiusMM/(currentScan.cardWidthMM||63))*sw;
+        if(effPixelRadius>0.5){
             ctx.clearRect(0,0,off.width,off.height);
-            ctx.save();ctx.beginPath();roundRectPath(ctx,0,0,off.width,off.height,pixelRadius);ctx.clip();
-            ctx.drawImage(src,sx,sy,tileW,tileH,0,0,off.width,off.height);ctx.restore();
+            ctx.save();ctx.beginPath();roundRectPath(ctx,0,0,off.width,off.height,effPixelRadius);ctx.clip();
+            ctx.drawImage(src,sx,sy,sw,sh,0,0,off.width,off.height);ctx.restore();
         }
         const dataUrl=off.toDataURL('image/png');
         slicedCards.push({
@@ -869,10 +970,10 @@ function openCardCtxMenu(id, e){
     ctxCardId=id;
     // Highlight selected card, remove from others
     document.querySelectorAll('.review-card').forEach(el=>{
-        el.classList.toggle('card-selected', parseInt(el.dataset.cardId)===id);
+        el.classList.toggle('card-selected', el.dataset.cardId==id);
     });
     // Show current copies count
-    const card=slicedCards.find(sc=>sc.id===id);
+    const card=slicedCards.find(sc=>sc.id==id);
     document.getElementById('ctx-copies-val').textContent=card?(card.copies||1):1;
 
     const menu=document.getElementById('card-ctx-menu');
@@ -926,14 +1027,12 @@ function ctxRename(){
 }
 function ctxEdit(){const id=ctxCardId;closeCardCtxMenu();openEditModal(id);}
 function ctxChangeCopies(delta){
-    if(!ctxCardId)return;
-    const card=slicedCards.find(sc=>sc.id===ctxCardId);if(!card)return;
+    if(ctxCardId===null||ctxCardId===undefined)return;
+    const card=slicedCards.find(sc=>sc.id==ctxCardId);if(!card)return;
     card.copies=Math.max(1,(card.copies||1)+delta);
     document.getElementById('ctx-copies-val').textContent=card.copies;
-    // Update badge live without full re-render
     const badge=document.getElementById(`copies-badge-${ctxCardId}`);
     if(badge){badge.textContent=`×${card.copies}`;badge.style.display=card.copies>1?'block':'none';}
-    // Also update the review count header to reflect total copies
     updateReviewBtn();
 }
 function ctxDelete(){
@@ -1078,7 +1177,7 @@ async function exportReviewZIP(){
 
     // Summary TXT
     const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
-    let txt=`Card Grid Splitter — Export Summary\n${'='.repeat(40)}\n`;
+    let txt=`Card Sheet Generator — Export Summary\n${'='.repeat(40)}\n`;
     txt+=`Prefix:       ${currentPrefix}\n`;
     txt+=`Total cards:  ${slicedCards.length}\n\n`;
     if(currentScan){
@@ -1098,9 +1197,20 @@ async function exportReviewZIP(){
         txt+=`--- Card Format ---\n`;
         txt+=`Size:         ${currentScan.cardWidthMM} mm × ${currentScan.cardHeightMM} mm\n`;
         txt+=`Corner Rad.:  ${radiusMM} mm\n\n`;
+        txt+=`--- Tile Padding ---\n`;
+        txt+=`Left:   ${tilePad.left} px\n`;
+        txt+=`Right:  ${tilePad.right} px\n`;
+        txt+=`Top:    ${tilePad.top} px\n`;
+        txt+=`Bottom: ${tilePad.bottom} px\n\n`;
     }
     txt+=`--- Cards ---\n`;
-    slicedCards.forEach((c,i)=>txt+=`${String(i+1).padStart(3,'0')}. ${currentPrefix}_${c.suffix}.png${(c.copies||1)>1?` (×${c.copies} copies)`:''}\n`);
+    slicedCards.forEach((c,i)=>{
+        const hasTrim=c.trim&&(c.trim.l||c.trim.t||c.trim.r||c.trim.b);
+        let line=`${String(i+1).padStart(3,'0')}. ${currentPrefix}_${c.suffix}.png`;
+        if((c.copies||1)>1)line+=` (×${c.copies} copies)`;
+        if(hasTrim)line+=` [trim L:${c.trim.l} R:${c.trim.r} T:${c.trim.t} B:${c.trim.b}]`;
+        txt+=line+'\n';
+    });
     zip.file('_summary.txt',txt);
 
     const content=await zip.generateAsync({type:'blob'});
@@ -1171,6 +1281,59 @@ async function generatePDF(){
         cidx+=cardsPerPage;
     }
 
+    // Optional summary page (last)
+    if(document.getElementById('pdf-summary-page').checked){
+        doc.addPage();
+        const m=12, lh=5.5;
+        let sy=m;
+        const setH=(s,bold=false)=>{doc.setFontSize(s);doc.setFont('helvetica',bold?'bold':'normal');};
+        const txt=(t,x=m,indent=0)=>{doc.setTextColor(60,60,60);doc.text(t,x+indent,sy);sy+=lh;};
+        const txtSmall=(t,x=m,indent=0)=>{doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);doc.text(t,x+indent,sy);sy+=4.5;};
+        const hr=()=>{doc.setDrawColor(200,200,200);doc.setLineWidth(0.2);doc.line(m,sy-1,pageW-m,sy-1);sy+=1;};
+
+        setH(14,true);doc.setTextColor(30,30,30);
+        doc.text('Card Sheet Generator — Summary',m,sy);sy+=8;
+        hr();
+
+        setH(9,true);txt(`Set Prefix: ${currentPrefix}`);
+        setH(8);
+        txt(`Total unique cards: ${slicedCards.length}   Total with copies: ${expandedCards.length}`);
+        if(batchLabel)txt(`Batch label: ${batchLabel}`);
+        sy+=2;
+
+        if(currentScan){
+            setH(9,true);txt('Source Image');hr();
+            setH(8);
+            txt(`File: ${currentScan.name}`,m,2);
+            txt(`Rotation: ${currentScan.rotation}°   Brightness: ${currentScan.brightness}%   Contrast: ${currentScan.contrast}%   Saturation: ${currentScan.saturation}%   Hue: ${currentScan.hue}°`,m,2);
+            txt(`Grid: ${currentScan.cols} cols × ${currentScan.rows} rows`,m,2);
+            txt(`Crop: L${currentScan.cropLeft} R${currentScan.cropRight} T${currentScan.cropTop} B${currentScan.cropBottom} px`,m,2);
+            sy+=2;
+        }
+
+        setH(9,true);txt('Card Format');hr();
+        setH(8);
+        txt(`Size: ${currentScan?currentScan.cardWidthMM:63} mm × ${currentScan?currentScan.cardHeightMM:88} mm   Corner radius: ${radiusMM} mm`,m,2);
+        txt(`Tile padding: L${tilePad.left} R${tilePad.right} T${tilePad.top} B${tilePad.bottom} px`,m,2);
+        sy+=2;
+
+        setH(9,true);txt('Cards');hr();
+        setH(7);
+        // Two-column card list
+        const colW=(pageW-m*2)/2;
+        let col=0;const startSY=sy;
+        slicedCards.forEach((c,i)=>{
+            const hasTrim=c.trim&&(c.trim.l||c.trim.t||c.trim.r||c.trim.b);
+            const copies=(c.copies||1)>1?` ×${c.copies}`:'';
+            const trim=hasTrim?` [L${c.trim.l} R${c.trim.r} T${c.trim.t} B${c.trim.b}]`:'';
+            const line=`${String(i+1).padStart(3,'0')}. ${currentPrefix}_${c.suffix}${copies}${trim}`;
+            doc.setTextColor(60,60,60);doc.setFont('helvetica','normal');
+            doc.text(line,m+col*colW,sy,{maxWidth:colW-4});
+            sy+=4;
+            if(sy>pageH-m){col=1-col;sy=col===1?startSY:pageH-m+10;}
+        });
+    }
+
     const pdfBlob=doc.output('blob');
     document.getElementById('pdf-preview-iframe').src=URL.createObjectURL(pdfBlob);
     btn.textContent='Generate PDF Preview';btn.disabled=false;
@@ -1182,7 +1345,7 @@ function addRoundedCardToPDF(doc,url,x,y,w,h,r){
     else{doc.addImage(url,fmt,x,y,w,h);}
 }
 
-window.onload=()=>console.log('%c✅ Card Grid Splitter ready','color:#22c55e;font-weight:bold');
+window.onload=()=>console.log('%c✅ Card Sheet Generator ready','color:#22c55e;font-weight:bold');
 </script>
 </body>
 </html>

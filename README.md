@@ -7,6 +7,6 @@ Scan or download some cards, retouch faded colors, fix janky alignments, export,
 ![example image](https://raw.githubusercontent.com/JannisElef/card-sheet-generator/main/assets/img/Card-Sheet-Generator_example.jpg)
 
 
-Try it yourself [here](https://janniselef.github.io/card-cropper/).
+Try it yourself [here](https://janniselef.github.io/card-sheet-generator/).
 
-See more information and usage examples [here](https://janniselef.github.io/card-cropper/).
+See more information and usage examples [here](https://janniselef.github.io/projects/card-sheet-generator/).

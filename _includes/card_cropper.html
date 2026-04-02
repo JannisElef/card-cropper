@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Card Grid Splitter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        body{font-family:'Inter',system-ui,sans-serif}
+        ::-webkit-scrollbar{width:6px;height:6px}
+        ::-webkit-scrollbar-track{background:#0f172a}
+        ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+
+        .preview-wrapper{width:100%;height:100%;background:repeating-conic-gradient(#334155 0% 25%,#1e293b 0% 50%) 0 0/20px 20px;border-radius:16px;overflow:hidden;box-shadow:0 25px 50px -12px rgb(0 0 0/.45);position:relative;cursor:grab;touch-action:none}
+        #preview-canvas{image-rendering:crisp-edges;transform-origin:0 0;position:absolute;top:0;left:0}
+        #selection-overlays{position:absolute;top:0;left:0;width:0;height:0;transform-origin:0 0;pointer-events:none;z-index:30}
+        .tile-overlay{position:absolute;border:3px solid #22c55e;background:rgba(134,239,172,.22);pointer-events:none;border-radius:var(--tile-radius)}
+        
+        /* Popup (select modal) canvas */
+        #popup-canvas-wrap{width:100%;flex:1;min-height:0;background:repeating-conic-gradient(#334155 0% 25%,#1e293b 0% 50%) 0 0/20px 20px;border-radius:12px;overflow:hidden;position:relative;touch-action:none;cursor:crosshair}
+        #popup-canvas{image-rendering:crisp-edges;transform-origin:0 0;position:absolute;top:0;left:0}
+        #popup-sel-overlays{position:absolute;top:0;left:0;width:0;height:0;transform-origin:0 0;pointer-events:none;z-index:30}
+        .popup-tile-overlay{position:absolute;pointer-events:none;border-radius:var(--tile-radius);transition:background .08s,border-color .08s}
+        #drag-box{position:absolute;border:2px solid #3b82f6;background:rgba(59,130,246,.3);pointer-events:none;z-index:40;display:none}
+
+        /* Edit modal canvas */
+        #edit-canvas-wrap{width:100%;flex:1;min-height:0;background:repeating-conic-gradient(#334155 0% 25%,#1e293b 0% 50%) 0 0/20px 20px;border-radius:12px;overflow:hidden;position:relative;touch-action:none;cursor:grab}
+        #edit-canvas{image-rendering:crisp-edges;transform-origin:0 0;position:absolute;top:0;left:0}
+
+        .modal-overlay{display:none;position:fixed;inset:0;z-index:500;background:rgba(2,6,23,.88);flex-direction:column;align-items:center;justify-content:center;padding:16px}
+        .modal-overlay.open{display:flex}
+        .modal-inner{width:100%;max-width:960px;height:100%;max-height:calc(100dvh - 32px);background:#0f172a;border:1px solid #1e293b;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 40px 80px -12px rgba(0,0,0,.8)}
+        .modal-inner-large{max-width:1400px;flex-direction:column}
+        @media(min-width:768px){.modal-inner-large{flex-direction:row}}
+
+        #sidebar{position:fixed;top:0;left:0;width:300px;max-width:85vw;height:100%;z-index:200;transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow-y:auto}
+        #sidebar.open{transform:translateX(0)}
+        #sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:199}
+        #sidebar-backdrop.open{display:block}
+        @media(min-width:768px){
+            #sidebar{position:relative;transform:translateX(0)!important;width:300px;flex-shrink:0;z-index:auto}
+            #sidebar-backdrop{display:none!important}
+            #sidebar-toggle{display:none!important}
+        }
+
+        #toolbar-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+        #toolbar-bar::-webkit-scrollbar{display:none}
+        .toolbar-inner{min-width:max-content}
+        .drop-zone-active{border-color:#22c55e!important;background:rgba(34,197,94,.08)!important}
+        .rot-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#334155;border:1px solid #475569;cursor:pointer;font-size:17px;transition:background .12s}
+        .rot-btn:hover{background:#475569}
+        input[type=range]{height:4px}
+        .section-body{overflow:hidden;transition:max-height .22s ease}
+        .section-toggle-icon{transition:transform .2s}
+        .section-collapsed .section-toggle-icon{transform:rotate(-90deg)}
+        .section-collapsed .section-body{max-height:0!important}
+
+        /* Review grid: each card is a fixed-size column, grid scrolls */
+        #review-grid{
+            display:grid;
+            gap:12px;
+            padding:12px;
+            overflow-y:auto;
+            grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
+            align-content:start;
+            flex:1;
+            min-height:0;
+        }
+        .review-card{background:#0f172a;border:1px solid #334155;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .12s,box-shadow .12s;}
+        .review-card:hover{border-color:#475569;}
+        .review-card.card-selected{border-color:#22c55e!important;box-shadow:0 0 0 2px rgba(34,197,94,.35);}
+
+        /* Card context menu */
+        #card-ctx-menu{
+            position:fixed;z-index:9999;background:#1e293b;border:1px solid #334155;
+            border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.6);padding:4px;
+            min-width:160px;display:none;
+        }
+        #card-ctx-menu.open{display:block;}
+        .ctx-item{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:7px;cursor:pointer;font-size:12px;transition:background .1s;white-space:nowrap;}
+        .ctx-item:hover{background:#334155;}
+        .ctx-item.danger{color:#f87171;}
+        .ctx-item.danger:hover{background:rgba(239,68,68,.15);}
+        #ctx-copies-row{cursor:default;border-top:1px solid #334155;border-bottom:1px solid #334155;margin:2px 0;}
+        #ctx-copies-row:hover{background:transparent;}
+
+        /* Rename inline overlay on card */
+        .rename-input-active{outline:2px solid #3b82f6!important;background:#0f172a!important;}
+
+        /* Copies multiplier badge */
+        .copies-badge{
+            position:absolute;top:6px;right:6px;
+            background:rgba(30,41,59,.92);
+            border:1.5px solid #f59e0b;
+            color:#fbbf24;
+            font-size:10px;font-weight:700;font-family:monospace;
+            padding:1px 6px;border-radius:20px;
+            pointer-events:none;letter-spacing:.02em;
+            box-shadow:0 2px 8px rgba(0,0,0,.5);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200" style="height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
+
+<!-- HEADER -->
+<div class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between flex-shrink-0 z-50 gap-2">
+    <div class="flex items-center gap-2">
+        <button id="sidebar-toggle" onclick="toggleSidebar()" class="w-9 h-9 flex flex-col items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl flex-shrink-0 transition-colors">
+            <span class="w-5 h-0.5 bg-slate-300 rounded"></span><span class="w-5 h-0.5 bg-slate-300 rounded"></span><span class="w-5 h-0.5 bg-slate-300 rounded"></span>
+        </button>
+        <div class="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center text-lg">🃏</div>
+        <h1 class="text-base font-semibold whitespace-nowrap">Card Grid Splitter</h1>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="openSelectModal()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-2xl font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors">
+            🃏 Select Cards <span id="selected-count" class="bg-white/20 px-2 py-0.5 rounded-xl text-xs">0</span>
+        </button>
+        <button onclick="openReviewIfPossible()" id="review-btn" title="Open card list" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-2xl font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors opacity-40 cursor-default">
+            📋 Cards <span id="review-card-count" class="bg-white/20 px-2 py-0.5 rounded-xl text-xs">0</span>
+        </button>
+    </div>
+</div>
+
+<div style="flex:1;display:flex;min-height:0;position:relative;">
+    <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar" class="bg-slate-900 border-r border-slate-800 p-3 space-y-3">
+        <div id="upload-box" onclick="document.getElementById('file-upload').click()" class="border-2 border-dashed border-slate-600 hover:border-blue-400 rounded-2xl p-5 text-center cursor-pointer transition-colors">
+            <div class="text-4xl mb-1">📸</div>
+            <div class="text-sm font-medium">Upload Image<br><span class="text-slate-400 text-xs">Click or Drag &amp; Drop</span></div>
+            <input type="file" id="file-upload" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+        </div>
+        <div>
+                    <label class="block text-xs text-slate-400 mb-1">Set Prefix</label>
+                    <input id="prefix-input" type="text" value="MyCardSet" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm" oninput="currentPrefix=this.value;syncPdfLabel()">
+                </div>
+        <div class="section-wrap">
+            <button class="section-header w-full flex items-center justify-between text-xs uppercase tracking-widest text-slate-400 mb-1 py-0.5" onclick="toggleSection(this)"><span>Crop (px)</span><span class="section-toggle-icon text-slate-500">▾</span></button>
+            <div class="section-body" style="max-height:300px">
+                <div class="grid grid-cols-1 gap-3 pt-1">
+                    <div><label class="text-xs text-slate-400">Left</label><div class="flex gap-2 items-center mt-0.5"><input type="range" id="crop-left" min="0" max="1000" value="0" step="1" oninput="updateCrop()" class="flex-1 accent-emerald-500"><input type="number" id="crop-left-num" value="0" min="0" step="1" class="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="updateCropFromNumber()"></div></div>
+                    <div><label class="text-xs text-slate-400">Right</label><div class="flex gap-2 items-center mt-0.5"><input type="range" id="crop-right" min="0" max="1000" value="0" step="1" oninput="updateCrop()" class="flex-1 accent-emerald-500"><input type="number" id="crop-right-num" value="0" min="0" step="1" class="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="updateCropFromNumber()"></div></div>
+                    <div><label class="text-xs text-slate-400">Top</label><div class="flex gap-2 items-center mt-0.5"><input type="range" id="crop-top" min="0" max="1000" value="0" step="1" oninput="updateCrop()" class="flex-1 accent-emerald-500"><input type="number" id="crop-top-num" value="0" min="0" step="1" class="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="updateCropFromNumber()"></div></div>
+                    <div><label class="text-xs text-slate-400">Bottom</label><div class="flex gap-2 items-center mt-0.5"><input type="range" id="crop-bottom" min="0" max="1000" value="0" step="1" oninput="updateCrop()" class="flex-1 accent-emerald-500"><input type="number" id="crop-bottom-num" value="0" min="0" step="1" class="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs" oninput="updateCropFromNumber()"></div></div>
+                </div>
+            </div>
+        </div>
+        <div class="section-wrap">
+            <div class="flex items-center justify-between mb-1">
+                <button class="section-header flex items-center gap-2 text-xs uppercase tracking-widest text-slate-400 py-0.5" onclick="toggleSection(this)"><span>Image Settings</span><span class="section-toggle-icon text-slate-500">▾</span></button>
+                <button onclick="resetImageParams()" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] font-semibold transition-colors">Reset</button>
+            </div>
+            <div class="section-body" style="max-height:200px">
+                <div class="space-y-2 pt-1">
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Brightness</span><input type="range" id="brightness" min="0" max="200" value="100" oninput="syncNum('brightness');liveUpdate()" class="flex-1 accent-emerald-500"><input type="number" id="brightness-num" value="100" min="0" max="200" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="updateFromNumber('brightness')"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Contrast</span><input type="range" id="contrast" min="0" max="200" value="100" oninput="syncNum('contrast');liveUpdate()" class="flex-1 accent-emerald-500"><input type="number" id="contrast-num" value="100" min="0" max="200" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="updateFromNumber('contrast')"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Saturation</span><input type="range" id="saturation" min="0" max="200" value="100" oninput="syncNum('saturation');liveUpdate()" class="flex-1 accent-emerald-500"><input type="number" id="saturation-num" value="100" min="0" max="200" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="updateFromNumber('saturation')"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Hue</span><input type="range" id="hue" min="-180" max="180" value="0" oninput="syncNum('hue');liveUpdate()" class="flex-1 accent-emerald-500"><input type="number" id="hue-num" value="0" min="-180" max="180" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="updateFromNumber('hue')"></div>
+                </div>
+            </div>
+        </div>
+        <div class="section-wrap">
+            <button class="section-header w-full flex items-center justify-between text-xs uppercase tracking-widest text-slate-400 mb-1 py-0.5" onclick="toggleSection(this)"><span>Card Size &amp; Corners</span><span class="section-toggle-icon text-slate-500">▾</span></button>
+            <div class="section-body" style="max-height:200px">
+                <div class="space-y-2 pt-1">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><label class="text-xs text-slate-400 block mb-1">Width (mm)</label><input type="number" id="card-width-mm" value="63" min="1" max="200" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-center text-sm" oninput="updateCardSize()"></div>
+                        <div><label class="text-xs text-slate-400 block mb-1">Height (mm)</label><input type="number" id="card-height-mm" value="88" min="1" max="300" step="0.5" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-center text-sm" oninput="updateCardSize()"></div>
+                    </div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Radius (mm)</span><input type="range" id="corner-radius-mm" min="0" max="15" value="3" step="0.5" oninput="syncNum('corner-radius-mm');updatePreview()" class="flex-1 accent-emerald-500"><input type="number" id="corner-radius-mm-num" value="3" min="0" max="15" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('corner-radius-mm').value=this.value;updatePreview()"></div>
+                    <div id="radius-info" class="text-xs text-slate-600 text-right h-3"></div>
+                </div>
+            </div>
+        </div>
+        <div class="section-wrap">
+            <button class="section-header w-full flex items-center justify-between text-xs uppercase tracking-widest text-slate-400 mb-1 py-0.5" onclick="toggleSection(this)"><span>Viewport Lines</span><span class="section-toggle-icon text-slate-500">▾</span></button>
+            <div class="section-body" style="max-height:160px">
+                <div class="space-y-2 pt-1">
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Grid (px)</span><input type="range" id="line-grid" min="0.5" max="10" value="2" step="0.5" oninput="syncNum('line-grid');updatePreview()" class="flex-1 accent-red-500"><input type="number" id="line-grid-num" value="2" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-grid').value=this.value;updatePreview()"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Crop (px)</span><input type="range" id="line-crop" min="0.5" max="10" value="3" step="0.5" oninput="syncNum('line-crop');updatePreview()" class="flex-1 accent-emerald-500"><input type="number" id="line-crop-num" value="3" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-crop').value=this.value;updatePreview()"></div>
+                    <div class="flex items-center gap-2"><span class="text-xs text-slate-400" style="min-width:60px">Selection (px)</span><input type="range" id="line-sel" min="0.5" max="10" value="2" step="0.5" oninput="syncNum('line-sel');renderSelectionOverlays()" class="flex-1 accent-emerald-500"><input type="number" id="line-sel-num" value="2" min="0.5" max="10" step="0.5" class="w-12 bg-slate-800 border border-slate-700 rounded-lg px-1 py-1 text-center text-xs" oninput="document.getElementById('line-sel').value=this.value;renderSelectionOverlays()"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN -->
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;">
+        <div id="toolbar-bar" class="bg-slate-900 border-b border-slate-800 flex-shrink-0">
+            <div class="toolbar-inner px-3 py-2 flex items-center gap-2">
+                <div id="current-scan-name" class="font-medium text-xs text-slate-300 truncate max-w-[120px] md:max-w-xs">No scan loaded</div>
+                <div class="flex items-center gap-1 border-r border-slate-700 pr-2 mr-1 flex-shrink-0">
+                    <button class="rot-btn" onclick="rotateImage(-90)">↺</button>
+                    <span id="rotation-label" class="text-xs text-slate-500 w-7 text-center">0°</span>
+                    <button class="rot-btn" onclick="rotateImage(90)">↻</button>
+                </div>
+                <span class="text-slate-400 text-xs flex-shrink-0">Cols</span>
+                <input id="cols" type="number" value="4" min="1" oninput="updateGrid()" class="w-11 bg-slate-800 text-center border border-slate-700 rounded-xl py-1 font-mono text-sm flex-shrink-0">
+                <button onclick="syncRowsToCols()" title="Set Rows = Cols" class="px-1.5 py-1 bg-slate-700 hover:bg-emerald-700 rounded-lg text-xs flex-shrink-0 font-bold transition-colors text-slate-300">=</button>
+                <span class="text-slate-400 text-xs flex-shrink-0">Rows</span>
+                <input id="rows" type="number" value="3" min="1" oninput="updateGrid()" class="w-11 bg-slate-800 text-center border border-slate-700 rounded-xl py-1 font-mono text-sm flex-shrink-0">
+                <button onclick="resetView()" class="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs flex-shrink-0 whitespace-nowrap">Auto Fit</button>
+            </div>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:12px;background:#020617;min-height:0;">
+            <div id="preview-wrapper" class="preview-wrapper" onmousedown="startPan(event)" onwheel="zoomWithWheel(event)" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                <canvas id="preview-canvas"></canvas>
+                <div id="selection-overlays"></div>
+                <div id="drop-hint" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;user-select:none;color:#475569;">
+                    <div style="font-size:56px;margin-bottom:10px;">🖼️</div>
+                    <div style="font-size:13px;font-weight:500;text-align:center;padding:0 16px;">Drop image here or tap ☰ to upload</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SELECT MODAL (lasso only, no separate pan mode button) -->
+<div id="select-modal" class="modal-overlay">
+    <div class="modal-inner">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800 flex-shrink-0 gap-3">
+            <div>
+                <div class="text-base font-semibold leading-tight">Select Cards</div>
+                <div class="text-xs text-slate-500 mt-0.5">Click/drag-lasso to select · Middle mouse to pan · Scroll/pinch to zoom</div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button onclick="popupSelectAll()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-xs font-medium transition-colors">Select All</button>
+                <button onclick="popupDeselectAll()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs transition-colors">Deselect All</button>
+                <button onclick="popupResetView()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs transition-colors">Fit</button>
+                <div class="w-px h-5 bg-slate-700"></div>
+                <button onclick="closeSelectModal()" class="w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded-xl text-slate-300 font-bold">✕</button>
+            </div>
+        </div>
+        <div style="flex:1;display:flex;padding:14px;background:#020617;min-height:0;">
+            <div id="popup-canvas-wrap" onwheel="popupZoomWheel(event)">
+                <canvas id="popup-canvas"></canvas>
+                <div id="popup-sel-overlays"></div>
+                <div id="drag-box"></div>
+            </div>
+        </div>
+        <div class="px-5 py-3 border-t border-slate-800 flex items-center justify-between flex-shrink-0 bg-slate-900/40">
+            <div class="flex items-center gap-3">
+                <span id="popup-counter" class="text-emerald-400 font-mono text-sm font-semibold">0 / 0</span>
+                <span class="text-xs text-slate-500">cards selected</span>
+            </div>
+            <button onclick="sliceCardsAndReview()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold transition-colors">✂️ Slice &amp; Review</button>
+        </div>
+    </div>
+</div>
+
+<!-- REVIEW MODAL -->
+<div id="review-modal" class="modal-overlay">
+    <div class="modal-inner modal-inner-large">
+
+        <!-- LEFT: card grid -->
+        <div class="flex-1 flex flex-col min-w-0 md:border-r border-b md:border-b-0 border-slate-800" style="min-height:0;">
+            <div class="px-5 py-3 border-b border-slate-800 bg-slate-900 flex items-center justify-between flex-shrink-0 gap-3">
+                <div>
+                    <div class="text-base font-semibold">Cards (<span id="review-count">0</span>)</div>
+                    <div class="text-xs text-slate-400 mt-0.5">Edit name (suffix only) or fine-tune crop</div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Import individual card images -->
+                    <label class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs cursor-pointer transition-colors whitespace-nowrap flex items-center gap-1">
+                        ➕ Add Cards
+                        <input type="file" id="import-cards-upload" accept="image/*" multiple class="hidden" onchange="importIndividualCards(event)">
+                    </label>
+                    <button onclick="document.getElementById('review-modal').classList.remove('open')" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg">Back</button>
+                </div>
+            </div>
+            <!-- Scrollable grid — cards keep min-width -->
+            <div id="review-grid"></div>
+        </div>
+
+        <!-- RIGHT: export -->
+        <div class="w-full md:w-80 flex flex-col bg-slate-900 flex-shrink-0" style="min-height:0;">
+            <div class="p-5 space-y-4 flex-shrink-0 overflow-y-auto">
+                <h3 class="font-semibold text-emerald-400">📦 Export Options</h3>
+
+                <button onclick="exportReviewZIP()" class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-semibold transition-colors text-sm">
+                    Download ZIP (Images)
+                </button>
+
+                <hr class="border-slate-800">
+                <h3 class="font-semibold text-slate-300">📄 PDF Print Sheet</h3>
+
+        <div>
+                    <label class="block text-xs text-slate-400 mb-1">Batch / page label</label>
+                    <input id="pdf-batch-label" type="text" placeholder="e.g. Nature Pack Vol.1" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                </div>
+
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="use-card-back" onchange="toggleCardBackOptions()" class="w-4 h-4 accent-emerald-500 rounded">
+                    <span class="text-sm text-slate-300">Use Card Back (double-sided)</span>
+                </label>
+
+                <div id="card-back-options" class="hidden space-y-3 pl-5 border-l-2 border-slate-700">
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="back-source" value="fromset" id="back-fromset-radio" checked onchange="switchBackSource()" class="accent-emerald-500">
+                            <span class="text-xs text-slate-300">Pick card from set</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="back-source" value="upload" id="back-upload-radio" onchange="switchBackSource()" class="accent-emerald-500">
+                            <span class="text-xs text-slate-300">Upload image</span>
+                        </label>
+                    </div>
+                    <div id="back-fromset-panel">
+                        <select id="back-card-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-xs" onchange="previewBackFromSet()">
+                            <option value="">— choose card —</option>
+                        </select>
+                        <div id="back-fromset-preview" class="mt-2 hidden"><img id="back-fromset-img" class="w-16 h-auto rounded border border-slate-700 checker-bg"></div>
+                    </div>
+                    <div id="back-upload-panel" class="hidden">
+                        <input type="file" id="card-back-upload" accept="image/*" class="w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" onchange="handleCardBackUpload(event)">
+                        <div id="back-upload-preview" class="mt-2 hidden"><img id="back-upload-img" class="w-16 h-auto rounded border border-slate-700 checker-bg"></div>
+                    </div>
+                    <div class="text-xs text-slate-500">Back pages are mirrored horizontally for duplex flip-on-long-edge printing.</div>
+                </div>
+
+                <button onclick="generatePDF()" id="pdf-gen-btn" class="w-full px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-semibold transition-colors text-sm">
+                    Generate PDF Preview
+                </button>
+            </div>
+
+            <div class="flex-1 bg-slate-950 p-2 flex flex-col" style="min-height:200px;">
+                <div class="text-xs text-slate-500 text-center mb-1">PDF Preview</div>
+                <iframe id="pdf-preview-iframe" class="flex-1 w-full bg-white rounded-lg border border-slate-800"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT MODAL — zoom/pan canvas + pixel crop inputs -->
+<div id="edit-modal" class="modal-overlay z-[700]">
+    <div class="modal-inner" style="max-width:900px;">
+        <div class="px-5 py-3 border-b border-slate-800 bg-slate-900 flex items-center justify-between flex-shrink-0">
+            <div>
+                <div class="text-base font-semibold">Fine-tune Crop</div>
+                <div id="edit-card-name-display" class="text-xs text-slate-400 mt-0.5"></div>
+            </div>
+            <button onclick="document.getElementById('edit-modal').classList.remove('open')" class="w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded-xl">✕</button>
+        </div>
+        <div class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+            <!-- Zoomable/pannable canvas -->
+            <div class="flex-1 bg-slate-950 flex flex-col p-3 min-h-0 min-w-0" style="min-height:300px;">
+                <div id="edit-canvas-wrap" onwheel="editZoomWheel(event)">
+                    <canvas id="edit-canvas"></canvas>
+                </div>
+                <div class="flex gap-2 mt-2 flex-shrink-0">
+                    <button onclick="editResetView()" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs">Fit</button>
+                    <span class="text-xs text-slate-500 self-center">Scroll to zoom · Drag to pan</span>
+                </div>
+            </div>
+            <!-- Controls -->
+            <div class="w-full md:w-64 bg-slate-900 flex flex-col p-4 gap-3 flex-shrink-0 overflow-y-auto">
+                <div class="text-xs uppercase tracking-widest text-slate-400 mb-1">Trim (px)</div>
+                <div>
+                    <div class="flex items-center justify-between mb-1"><label class="text-xs text-slate-400">Left</label><span id="el-val" class="text-xs text-slate-300 font-mono">0</span></div>
+                    <div class="flex gap-1 items-center">
+                        <input type="range" id="e-crop-l" min="0" value="0" oninput="updateEditCropNum('l');updateEditCanvas()" class="flex-1 accent-blue-500">
+                        <input type="number" id="e-crop-l-num" value="0" min="0" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-1 text-center text-xs" oninput="updateEditCropRange('l');updateEditCanvas()">
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1"><label class="text-xs text-slate-400">Right</label><span id="er-val" class="text-xs text-slate-300 font-mono">0</span></div>
+                    <div class="flex gap-1 items-center">
+                        <input type="range" id="e-crop-r" min="0" value="0" oninput="updateEditCropNum('r');updateEditCanvas()" class="flex-1 accent-blue-500">
+                        <input type="number" id="e-crop-r-num" value="0" min="0" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-1 text-center text-xs" oninput="updateEditCropRange('r');updateEditCanvas()">
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1"><label class="text-xs text-slate-400">Top</label><span id="et-val" class="text-xs text-slate-300 font-mono">0</span></div>
+                    <div class="flex gap-1 items-center">
+                        <input type="range" id="e-crop-t" min="0" value="0" oninput="updateEditCropNum('t');updateEditCanvas()" class="flex-1 accent-blue-500">
+                        <input type="number" id="e-crop-t-num" value="0" min="0" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-1 text-center text-xs" oninput="updateEditCropRange('t');updateEditCanvas()">
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1"><label class="text-xs text-slate-400">Bottom</label><span id="eb-val" class="text-xs text-slate-300 font-mono">0</span></div>
+                    <div class="flex gap-1 items-center">
+                        <input type="range" id="e-crop-b" min="0" value="0" oninput="updateEditCropNum('b');updateEditCanvas()" class="flex-1 accent-blue-500">
+                        <input type="number" id="e-crop-b-num" value="0" min="0" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-1 text-center text-xs" oninput="updateEditCropRange('b');updateEditCanvas()">
+                    </div>
+                </div>
+                <button onclick="saveIndividualCrop()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-semibold mt-auto">Save Crop</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CARD CONTEXT MENU -->
+<div id="card-ctx-menu">
+    <div class="ctx-item" onclick="ctxRename()">✏️ Rename</div>
+    <div class="ctx-item" onclick="ctxEdit()">✂️ Edit Crop</div>
+    <div class="ctx-item" id="ctx-copies-row" style="gap:6px;padding:6px 8px;">
+        <span style="font-size:13px;">🔢</span>
+        <span style="flex:1;font-size:12px;">Copies</span>
+        <button onclick="ctxChangeCopies(-1)" style="width:22px;height:22px;border-radius:6px;background:#334155;border:1px solid #475569;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" onmousedown="event.stopPropagation()">−</button>
+        <span id="ctx-copies-val" style="min-width:20px;text-align:center;font-size:12px;font-weight:600;font-family:monospace;">1</span>
+        <button onclick="ctxChangeCopies(+1)" style="width:22px;height:22px;border-radius:6px;background:#334155;border:1px solid #475569;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" onmousedown="event.stopPropagation()">+</button>
+    </div>
+    <div class="ctx-item danger" onclick="ctxDelete()">🗑️ Delete</div>
+</div>
+
+<script>
+/* ════ STATE ════ */
+let currentScan=null, currentPrefix='MyCardSet';
+let zoom=1,panX=0,panY=0,isPanning=false,lastX=0,lastY=0,touchState=null;
+let pZoom=1,pPanX=0,pPanY=0,pPinchState=null;
+let isDraggingBox=false,dragStartX=0,dragStartY=0,pIsPanning=false;
+let slicedCards=[],cardBackDataUrl=null,editingCardId=null;
+let eZoom=1,ePanX=0,ePanY=0,eIsPanning=false,eTouchState=null,eLastX=0,eLastY=0;
+let ctxCardId=null;
+
+/* ════ UI ════ */
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('open');}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('open');}
+function toggleSection(btn){btn.closest('.section-wrap').classList.toggle('section-collapsed');}
+function syncPdfLabel(){
+    const lbl=document.getElementById('pdf-batch-label');
+    if(lbl&&(!lbl.dataset.manuallyEdited||lbl.dataset.manuallyEdited==='0'))lbl.value=currentPrefix;
+}
+// Mark label as manually edited if user types in it
+document.addEventListener('DOMContentLoaded',()=>{
+    const lbl=document.getElementById('pdf-batch-label');
+    if(lbl){lbl.value=currentPrefix;lbl.dataset.manuallyEdited='0';lbl.addEventListener('input',()=>lbl.dataset.manuallyEdited='1');}
+});
+
+/* ════ FILE UPLOAD ════ */
+const uploadBox=document.getElementById('upload-box');
+uploadBox.addEventListener('dragover',e=>{e.preventDefault();uploadBox.classList.add('drop-zone-active');});
+uploadBox.addEventListener('dragleave',()=>uploadBox.classList.remove('drop-zone-active'));
+uploadBox.addEventListener('drop',e=>{e.preventDefault();uploadBox.classList.remove('drop-zone-active');const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('image/'))processFile(f);});
+function handleFileSelect(e){if(e.target.files[0]){processFile(e.target.files[0]);closeSidebar();}}
+function handleDragOver(e){e.preventDefault();document.getElementById('preview-wrapper').classList.add('drop-zone-active');}
+function handleDragLeave(){document.getElementById('preview-wrapper').classList.remove('drop-zone-active');}
+function handleDrop(e){e.preventDefault();document.getElementById('preview-wrapper').classList.remove('drop-zone-active');const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('image/'))processFile(f);}
+
+function processFile(file){
+    const img=new Image();
+    img.onload=()=>{
+        const prev=currentScan||{};
+        currentScan={
+            name:file.name,originalImage:img,
+            rotation:prev.rotation!==undefined?prev.rotation:0,
+            cols:parseInt(document.getElementById('cols').value)||4,
+            rows:parseInt(document.getElementById('rows').value)||3,
+            brightness:prev.brightness!==undefined?prev.brightness:100,
+            contrast:prev.contrast!==undefined?prev.contrast:100,
+            saturation:prev.saturation!==undefined?prev.saturation:100,
+            hue:prev.hue!==undefined?prev.hue:0,
+            cropLeft:prev.cropLeft!==undefined?prev.cropLeft:0,
+            cropTop:prev.cropTop!==undefined?prev.cropTop:0,
+            cropRight:prev.cropRight!==undefined?prev.cropRight:0,
+            cropBottom:prev.cropBottom!==undefined?prev.cropBottom:0,
+            cardWidthMM:parseFloat(document.getElementById('card-width-mm').value)||63,
+            cardHeightMM:parseFloat(document.getElementById('card-height-mm').value)||88,
+            selectedTiles:new Set()
+        };
+        document.getElementById('current-scan-name').textContent=file.name;
+        document.getElementById('drop-hint').style.display='none';
+        ['left','right'].forEach(d=>{document.getElementById(`crop-${d}`).max=img.width;document.getElementById(`crop-${d}-num`).max=img.width;});
+        ['top','bottom'].forEach(d=>{document.getElementById(`crop-${d}`).max=img.height;document.getElementById(`crop-${d}-num`).max=img.height;});
+        syncAllControls();
+        const canvas=document.getElementById('preview-canvas');canvas.width=img.width;canvas.height=img.height;
+        resetView();updatePreview();updateSelectedCount();
+    };
+    img.src=URL.createObjectURL(file);
+}
+
+/* ════ IMAGE PARAMS ════ */
+// Reset only image params (brightness/contrast/sat/hue/crop), NOT viewport
+function resetImageParams(){
+    if(!currentScan)return;
+    Object.assign(currentScan,{brightness:100,contrast:100,saturation:100,hue:0,
+        cropLeft:0,cropTop:0,cropRight:0,cropBottom:0,rotation:0});
+    syncAllControls();
+    document.getElementById('rotation-label').textContent='0°';
+    updatePreview(); // redraws without touching pan/zoom
+}
+function rotateImage(deg){
+    if(!currentScan)return;
+    currentScan.rotation=((currentScan.rotation+deg)%360+360)%360;
+    document.getElementById('rotation-label').textContent=currentScan.rotation+'°';
+    const img=currentScan.originalImage,isRot=currentScan.rotation===90||currentScan.rotation===270;
+    const w=isRot?img.height:img.width,h=isRot?img.width:img.height;
+    ['left','right'].forEach(d=>{document.getElementById(`crop-${d}`).max=w;document.getElementById(`crop-${d}-num`).max=w;});
+    ['top','bottom'].forEach(d=>{document.getElementById(`crop-${d}`).max=h;document.getElementById(`crop-${d}-num`).max=h;});
+    updatePreview();resetView();
+}
+function getTransformedCanvas(){
+    const img=currentScan.originalImage,rot=currentScan.rotation;
+    const swap=rot===90||rot===270,srcW=img.width,srcH=img.height,outW=swap?srcH:srcW,outH=swap?srcW:srcH;
+    const tmp=document.createElement('canvas');tmp.width=outW;tmp.height=outH;
+    const ctx=tmp.getContext('2d');
+    ctx.filter=`brightness(${currentScan.brightness}%) contrast(${currentScan.contrast}%) saturate(${currentScan.saturation}%) hue-rotate(${currentScan.hue}deg)`;
+    ctx.save();ctx.translate(outW/2,outH/2);ctx.rotate(rot*Math.PI/180);ctx.drawImage(img,-srcW/2,-srcH/2);ctx.restore();ctx.filter='none';
+    return tmp;
+}
+
+/* ════ CONTROLS ════ */
+function syncAllControls(){
+    if(!currentScan)return;
+    ['left','top','right','bottom'].forEach(d=>{const k=`crop${d[0].toUpperCase()+d.slice(1)}`;document.getElementById(`crop-${d}`).value=currentScan[k];document.getElementById(`crop-${d}-num`).value=currentScan[k];});
+    ['brightness','contrast','saturation','hue'].forEach(k=>{document.getElementById(k).value=currentScan[k];document.getElementById(k+'-num').value=currentScan[k];});
+    document.getElementById('cols').value=currentScan.cols;document.getElementById('rows').value=currentScan.rows;
+    document.getElementById('card-width-mm').value=currentScan.cardWidthMM;document.getElementById('card-height-mm').value=currentScan.cardHeightMM;
+    document.getElementById('rotation-label').textContent=(currentScan.rotation||0)+'°';
+}
+function updateCrop(){if(!currentScan)return;['left','top','right','bottom'].forEach(d=>{const k=`crop${d[0].toUpperCase()+d.slice(1)}`;currentScan[k]=parseInt(document.getElementById(`crop-${d}`).value)||0;document.getElementById(`crop-${d}-num`).value=currentScan[k];});updatePreview();}
+function updateCropFromNumber(){if(!currentScan)return;['left','top','right','bottom'].forEach(d=>{const k=`crop${d[0].toUpperCase()+d.slice(1)}`;currentScan[k]=parseInt(document.getElementById(`crop-${d}-num`).value)||0;document.getElementById(`crop-${d}`).value=currentScan[k];});updatePreview();}
+function syncNum(key){const n=document.getElementById(key+'-num');if(n)n.value=document.getElementById(key).value;}
+function liveUpdate(){if(!currentScan)return;currentScan.brightness=parseFloat(document.getElementById('brightness').value)||100;currentScan.contrast=parseFloat(document.getElementById('contrast').value)||100;currentScan.saturation=parseFloat(document.getElementById('saturation').value)||100;currentScan.hue=parseFloat(document.getElementById('hue').value)||0;updatePreview();}
+function updateFromNumber(key){if(!currentScan)return;const v=parseFloat(document.getElementById(key+'-num').value);currentScan[key]=isNaN(v)?(key==='hue'?0:100):v;document.getElementById(key).value=currentScan[key];updatePreview();}
+function updateGrid(){if(!currentScan)return;currentScan.cols=Math.max(1,parseInt(document.getElementById('cols').value)||4);currentScan.rows=Math.max(1,parseInt(document.getElementById('rows').value)||3);const total=currentScan.cols*currentScan.rows;currentScan.selectedTiles.forEach(i=>{if(i>=total)currentScan.selectedTiles.delete(i);});updatePreview();updateSelectedCount();}
+function updateCardSize(){if(!currentScan)return;currentScan.cardWidthMM=parseFloat(document.getElementById('card-width-mm').value)||63;currentScan.cardHeightMM=parseFloat(document.getElementById('card-height-mm').value)||88;updatePreview();}
+function updateSelectedCount(){document.getElementById('selected-count').textContent=currentScan?currentScan.selectedTiles.size:0;}
+function syncRowsToCols(){
+    const v=document.getElementById('cols').value;
+    document.getElementById('rows').value=v;
+    updateGrid();
+}
+
+/* ════ DRAWING ════ */
+function roundRectPath(ctx,x,y,w,h,r){
+    r=Math.min(r,w/2,h/2);if(r<=0){ctx.rect(x,y,w,h);return;}
+    ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+    ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+    ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);
+    ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+function drawGridOnCanvas(canvas,src,scan,cz){
+    const ctx=canvas.getContext('2d');canvas.width=src.width;canvas.height=src.height;ctx.drawImage(src,0,0);
+    const W=canvas.width,H=canvas.height,l=scan.cropLeft,t=scan.cropTop,r=scan.cropRight,b=scan.cropBottom;
+    const effW=W-l-r,effH=H-t-b,tileW=effW/scan.cols,tileH=effH/scan.rows;
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    const pixelRadius=(radiusMM/(scan.cardWidthMM||63))*tileW;
+    if(pixelRadius>0.5){
+        ctx.save();ctx.fillStyle='rgba(0,0,0,0.6)';
+        for(let row=0;row<scan.rows;row++)for(let col=0;col<scan.cols;col++){
+            const tx=l+col*tileW,ty=t+row*tileH;
+            ctx.save();ctx.beginPath();ctx.rect(tx,ty,tileW,tileH);ctx.clip();
+            ctx.beginPath();ctx.rect(tx,ty,tileW,tileH);roundRectPath(ctx,tx,ty,tileW,tileH,pixelRadius);ctx.fill('evenodd');ctx.restore();
+        }
+        ctx.restore();
+    }
+    const gt=(parseFloat(document.getElementById('line-grid').value)||2)/cz;
+    const ct=(parseFloat(document.getElementById('line-crop').value)||3)/cz;
+    ctx.strokeStyle='#22c55e';ctx.lineWidth=ct;ctx.setLineDash([ct*5,ct*2.5]);ctx.strokeRect(l,t,effW,effH);ctx.setLineDash([]);
+    ctx.strokeStyle='#ef4444';ctx.lineWidth=gt;
+    for(let i=1;i<scan.cols;i++){ctx.beginPath();ctx.moveTo(l+i*tileW,t);ctx.lineTo(l+i*tileW,H-b);ctx.stroke();}
+    for(let i=1;i<scan.rows;i++){ctx.beginPath();ctx.moveTo(l,t+i*tileH);ctx.lineTo(W-r,t+i*tileH);ctx.stroke();}
+    return{l,t,r,b,tileW,tileH,pixelRadius};
+}
+function updatePreview(){
+    if(!currentScan)return;
+    const canvas=document.getElementById('preview-canvas');const src=getTransformedCanvas();
+    const{pixelRadius}=drawGridOnCanvas(canvas,src,currentScan,zoom);
+    const infoEl=document.getElementById('radius-info');
+    if(infoEl)infoEl.textContent=pixelRadius>0?`≈ ${Math.round(pixelRadius)} px at current resolution`:'';
+    renderSelectionOverlays();
+}
+function renderSelectionOverlays(){
+    const c=document.getElementById('selection-overlays');c.innerHTML='';if(!currentScan)return;
+    const cv=document.getElementById('preview-canvas');const W=cv.width,H=cv.height;if(!W||!H)return;
+    c.style.width=W+'px';c.style.height=H+'px';
+    const l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+    const tileW=(W-l-r)/currentScan.cols,tileH=(H-t-b)/currentScan.rows;
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    const pr=Math.round((radiusMM/(currentScan.cardWidthMM||63))*tileW);
+    const bp=(parseFloat(document.getElementById('line-sel').value)||2)/zoom;
+    currentScan.selectedTiles.forEach(i=>{
+        const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);
+        const div=document.createElement('div');div.className='tile-overlay';
+        div.style.left=(l+col*tileW)+'px';div.style.top=(t+row*tileH)+'px';div.style.width=tileW+'px';div.style.height=tileH+'px';
+        div.style.borderWidth=bp+'px';div.style.setProperty('--tile-radius',pr+'px');
+        c.appendChild(div);
+    });
+}
+
+/* ════ MAIN PAN/ZOOM ════ */
+const previewWrapper=document.getElementById('preview-wrapper');
+previewWrapper.addEventListener('touchstart',e=>{
+    if(e.touches.length===1)touchState={type:'pan',x:e.touches[0].clientX,y:e.touches[0].clientY};
+    else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;touchState={type:'pinch',dist:Math.hypot(dx,dy),zoom};}
+    e.preventDefault();
+},{passive:false});
+previewWrapper.addEventListener('touchmove',e=>{
+    if(!touchState||!currentScan)return;e.preventDefault();
+    if(touchState.type==='pan'&&e.touches.length===1){panX+=e.touches[0].clientX-touchState.x;panY+=e.touches[0].clientY-touchState.y;touchState.x=e.touches[0].clientX;touchState.y=e.touches[0].clientY;applyTransform();}
+    else if(touchState.type==='pinch'&&e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const nd=Math.hypot(dx,dy);const c=document.getElementById('preview-canvas');const fitZ=Math.min(previewWrapper.clientWidth/c.width,previewWrapper.clientHeight/c.height);zoom=Math.max(fitZ*0.08,Math.min(touchState.zoom*(nd/touchState.dist),10));applyTransform();}
+},{passive:false});
+previewWrapper.addEventListener('touchend',e=>{if(e.touches.length===0)touchState=null;});
+function startPan(e){if(e.button!==0)return;isPanning=true;lastX=e.clientX;lastY=e.clientY;previewWrapper.style.cursor='grabbing';}
+document.addEventListener('mousemove',e=>{
+    if(isPanning){panX+=e.clientX-lastX;panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;applyTransform();}
+    if(pIsPanning){pPanX+=e.clientX-lastX;pPanY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;popupApplyTransform();}
+    if(eIsPanning){ePanX+=e.clientX-eLastX;ePanY+=e.clientY-eLastY;eLastX=e.clientX;eLastY=e.clientY;editApplyTransform();}
+    if(isDraggingBox){const rect=popupWrap.getBoundingClientRect();const cx=e.clientX-rect.left,cy=e.clientY-rect.top;const x=Math.min(cx,dragStartX),y=Math.min(cy,dragStartY);const w=Math.abs(cx-dragStartX),h=Math.abs(cy-dragStartY);const db=document.getElementById('drag-box');db.style.left=x+'px';db.style.top=y+'px';db.style.width=w+'px';db.style.height=h+'px';}
+});
+document.addEventListener('mouseup',e=>{
+    if(isPanning){isPanning=false;previewWrapper.style.cursor='grab';}
+    if(pIsPanning){pIsPanning=false;popupWrap.style.cursor='crosshair';}
+    if(eIsPanning){eIsPanning=false;editCanvasWrap.style.cursor='grab';}
+    if(isDraggingBox){
+        isDraggingBox=false;document.getElementById('drag-box').style.display='none';
+        const rect=popupWrap.getBoundingClientRect();const cx=e.clientX-rect.left,cy=e.clientY-rect.top;
+        const x=Math.min(cx,dragStartX),y=Math.min(cy,dragStartY);const w=Math.abs(cx-dragStartX),h=Math.abs(cy-dragStartY);
+        if(w<4&&h<4){popupToggleTileAtPx(cx,cy);}
+        else{
+            const imgX=(x-pPanX)/pZoom,imgY=(y-pPanY)/pZoom,imgW=w/pZoom,imgH=h/pZoom;
+            const W=document.getElementById('popup-canvas').width,H=document.getElementById('popup-canvas').height;
+            const l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+            const tileW=(W-l-r)/currentScan.cols,tileH=(H-t-b)/currentScan.rows;
+            for(let row=0;row<currentScan.rows;row++)for(let col=0;col<currentScan.cols;col++){
+                const tx=l+col*tileW,ty=t+row*tileH;
+                if(!(imgX>tx+tileW||imgX+imgW<tx||imgY>ty+tileH||imgY+imgH<ty))currentScan.selectedTiles.add(row*currentScan.cols+col);
+            }
+            popupRenderOverlays();renderSelectionOverlays();updatePopupCounter();
+        }
+    }
+});
+function zoomWithWheel(e){if(!currentScan)return;e.preventDefault();const f=e.deltaY<0?1.15:0.87;const c=document.getElementById('preview-canvas'),w=previewWrapper;const fz=Math.min(w.clientWidth/c.width,w.clientHeight/c.height);const old=zoom;zoom=Math.max(fz*0.08,Math.min(zoom*f,10));const rect=w.getBoundingClientRect();panX-=(e.clientX-rect.left-panX)*(zoom/old-1);panY-=(e.clientY-rect.top-panY)*(zoom/old-1);applyTransform();}
+function applyTransform(){const c=document.getElementById('preview-canvas'),o=document.getElementById('selection-overlays');const t=`translate(${panX}px,${panY}px) scale(${zoom})`;c.style.transform=t;if(o)o.style.transform=t;updatePreview();}
+function resetView(){if(!currentScan)return;const w=previewWrapper,c=document.getElementById('preview-canvas');zoom=Math.min((w.clientWidth*.9)/c.width,(w.clientHeight*.9)/c.height);panX=(w.clientWidth-c.width*zoom)/2;panY=(w.clientHeight-c.height*zoom)/2;applyTransform();}
+
+/* ════ SELECT MODAL — Lasso always on, middle mouse pans ════ */
+function openSelectModal(){if(!currentScan){alert('Please upload an image first!');return;}document.getElementById('select-modal').classList.add('open');requestAnimationFrame(()=>popupResetView());}
+function closeSelectModal(){document.getElementById('select-modal').classList.remove('open');}
+
+const popupWrap=document.getElementById('popup-canvas-wrap');
+
+popupWrap.addEventListener('mousedown',e=>{
+    if(!currentScan)return;
+    if(e.button===1){e.preventDefault();pIsPanning=true;lastX=e.clientX;lastY=e.clientY;popupWrap.style.cursor='grabbing';return;}
+    if(e.button===0){
+        isDraggingBox=true;const rect=popupWrap.getBoundingClientRect();
+        dragStartX=e.clientX-rect.left;dragStartY=e.clientY-rect.top;
+        const db=document.getElementById('drag-box');db.style.display='block';db.style.left=dragStartX+'px';db.style.top=dragStartY+'px';db.style.width='0px';db.style.height='0px';
+    }
+});
+popupWrap.addEventListener('touchstart',e=>{
+    if(!currentScan)return;
+    if(e.touches.length===1){
+        const rect=popupWrap.getBoundingClientRect();
+        pPinchState={type:'tap',startX:e.touches[0].clientX,startY:e.touches[0].clientY,moved:false};
+        isDraggingBox=true;dragStartX=e.touches[0].clientX-rect.left;dragStartY=e.touches[0].clientY-rect.top;
+        const db=document.getElementById('drag-box');db.style.display='block';db.style.left=dragStartX+'px';db.style.top=dragStartY+'px';db.style.width='0px';db.style.height='0px';
+    } else if(e.touches.length===2){
+        isDraggingBox=false;pIsPanning=false;document.getElementById('drag-box').style.display='none';
+        const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+        pPinchState={type:'pinch',lastDist:Math.hypot(dx,dy)};
+    }
+    e.preventDefault();
+},{passive:false});
+popupWrap.addEventListener('touchmove',e=>{
+    if(!pPinchState||!currentScan)return;e.preventDefault();
+    if(pPinchState.type==='tap'&&e.touches.length===1){
+        if(Math.abs(e.touches[0].clientX-pPinchState.startX)>5||Math.abs(e.touches[0].clientY-pPinchState.startY)>5)pPinchState.moved=true;
+        if(isDraggingBox){const rect=popupWrap.getBoundingClientRect();const cx=e.touches[0].clientX-rect.left,cy=e.touches[0].clientY-rect.top;const x=Math.min(cx,dragStartX),y=Math.min(cy,dragStartY);const w=Math.abs(cx-dragStartX),h=Math.abs(cy-dragStartY);const db=document.getElementById('drag-box');db.style.left=x+'px';db.style.top=y+'px';db.style.width=w+'px';db.style.height=h+'px';}
+    } else if(pPinchState.type==='pinch'&&e.touches.length===2){
+        const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const nd=Math.hypot(dx,dy);
+        const rect=popupWrap.getBoundingClientRect();const touchX=(e.touches[0].clientX+e.touches[1].clientX)/2-rect.left,touchY=(e.touches[0].clientY+e.touches[1].clientY)/2-rect.top;
+        const c=document.getElementById('popup-canvas');const fz=Math.min(popupWrap.clientWidth/c.width,popupWrap.clientHeight/c.height);
+        const nz=Math.max(fz*0.08,Math.min(pZoom*(nd/pPinchState.lastDist),10));
+        pPanX-=(touchX-pPanX)*(nz/pZoom-1);pPanY-=(touchY-pPanY)*(nz/pZoom-1);pZoom=nz;pPinchState.lastDist=nd;
+        popupApplyTransform();
+    }
+},{passive:false});
+popupWrap.addEventListener('touchend',e=>{
+    if(isDraggingBox){
+        isDraggingBox=false;document.getElementById('drag-box').style.display='none';
+        if(pPinchState&&pPinchState.type==='tap'&&pPinchState.moved&&e.changedTouches.length>0){
+            const rect=popupWrap.getBoundingClientRect();const cx=e.changedTouches[0].clientX-rect.left,cy=e.changedTouches[0].clientY-rect.top;
+            const x=Math.min(cx,dragStartX),y=Math.min(cy,dragStartY);const w=Math.abs(cx-dragStartX),h=Math.abs(cy-dragStartY);
+            const imgX=(x-pPanX)/pZoom,imgY=(y-pPanY)/pZoom,imgW=w/pZoom,imgH=h/pZoom;
+            const W=document.getElementById('popup-canvas').width,H=document.getElementById('popup-canvas').height;
+            const l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+            const tileW=(W-l-r)/currentScan.cols,tileH=(H-t-b)/currentScan.rows;
+            for(let row=0;row<currentScan.rows;row++)for(let col=0;col<currentScan.cols;col++){const tx=l+col*tileW,ty=t+row*tileH;if(!(imgX>tx+tileW||imgX+imgW<tx||imgY>ty+tileH||imgY+imgH<ty))currentScan.selectedTiles.add(row*currentScan.cols+col);}
+            popupRenderOverlays();renderSelectionOverlays();updatePopupCounter();
+        }
+    }
+    if(pPinchState&&pPinchState.type==='tap'&&!pPinchState.moved&&e.changedTouches.length>0){
+        const tt=e.changedTouches[0];const rect=popupWrap.getBoundingClientRect();
+        popupToggleTileAtPx(tt.clientX-rect.left,tt.clientY-rect.top);
+    }
+    if(e.touches.length===0){pPinchState=null;pIsPanning=false;}
+});
+
+function popupToggleTileAtPx(cx,cy){
+    if(!currentScan)return;
+    const canvas=document.getElementById('popup-canvas');const W=canvas.width,H=canvas.height;
+    const imgX=(cx-pPanX)/pZoom,imgY=(cy-pPanY)/pZoom;
+    if(imgX<0||imgY<0||imgX>W||imgY>H)return;
+    const l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+    const tileW=(W-l-r)/currentScan.cols,tileH=(H-t-b)/currentScan.rows;
+    if(imgX<l||imgX>W-r||imgY<t||imgY>H-b)return;
+    const col=Math.floor((imgX-l)/tileW),row=Math.floor((imgY-t)/tileH);
+    if(col<0||col>=currentScan.cols||row<0||row>=currentScan.rows)return;
+    const idx=row*currentScan.cols+col;
+    currentScan.selectedTiles.has(idx)?currentScan.selectedTiles.delete(idx):currentScan.selectedTiles.add(idx);
+    popupRenderOverlays();renderSelectionOverlays();updatePopupCounter();
+}
+function popupZoomWheel(e){
+    if(!currentScan)return;e.preventDefault();const f=e.deltaY<0?1.15:0.87;
+    const c=document.getElementById('popup-canvas'),fz=Math.min(popupWrap.clientWidth/c.width,popupWrap.clientHeight/c.height);const old=pZoom;
+    pZoom=Math.max(fz*0.08,Math.min(pZoom*f,10));
+    const rect=popupWrap.getBoundingClientRect();pPanX-=(e.clientX-rect.left-pPanX)*(pZoom/old-1);pPanY-=(e.clientY-rect.top-pPanY)*(pZoom/old-1);
+    popupApplyTransform();
+}
+function popupApplyTransform(){
+    const c=document.getElementById('popup-canvas'),o=document.getElementById('popup-sel-overlays');
+    const t=`translate(${pPanX}px,${pPanY}px) scale(${pZoom})`;c.style.transform=t;if(o)o.style.transform=t;popupRender();
+}
+function popupResetView(){
+    if(!currentScan)return;const src=getTransformedCanvas();const c=document.getElementById('popup-canvas');c.width=src.width;c.height=src.height;
+    pZoom=Math.min((popupWrap.clientWidth*.92)/src.width,(popupWrap.clientHeight*.92)/src.height);
+    pPanX=(popupWrap.clientWidth-src.width*pZoom)/2;pPanY=(popupWrap.clientHeight-src.height*pZoom)/2;
+    popupApplyTransform();
+}
+function popupRender(){
+    if(!currentScan)return;const canvas=document.getElementById('popup-canvas');const src=getTransformedCanvas();
+    drawGridOnCanvas(canvas,src,currentScan,pZoom);popupRenderOverlays();updatePopupCounter();
+}
+function popupRenderOverlays(){
+    const container=document.getElementById('popup-sel-overlays');container.innerHTML='';
+    if(!currentScan)return;const canvas=document.getElementById('popup-canvas');const W=canvas.width,H=canvas.height;if(!W||!H)return;
+    container.style.width=W+'px';container.style.height=H+'px';
+    const l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+    const tileW=(W-l-r)/currentScan.cols,tileH=(H-t-b)/currentScan.rows;
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    const pixelRadius=Math.round((radiusMM/(currentScan.cardWidthMM||63))*tileW);
+    const sb=Math.max(1,(parseFloat(document.getElementById('line-sel').value)||2)/pZoom);
+    const total=currentScan.cols*currentScan.rows;
+    for(let i=0;i<total;i++){
+        const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);const sel=currentScan.selectedTiles.has(i);
+        const div=document.createElement('div');div.className='popup-tile-overlay';
+        div.style.left=(l+col*tileW)+'px';div.style.top=(t+row*tileH)+'px';div.style.width=tileW+'px';div.style.height=tileH+'px';div.style.setProperty('--tile-radius',pixelRadius+'px');
+        div.style.border=sel?`${sb}px solid #22c55e`:`${sb}px solid rgba(255,255,255,0.08)`;
+        div.style.background=sel?'rgba(134,239,172,.25)':'transparent';
+        container.appendChild(div);
+    }
+}
+function updatePopupCounter(){
+    if(!currentScan)return;const sel=currentScan.selectedTiles.size,total=currentScan.cols*currentScan.rows;
+    document.getElementById('popup-counter').textContent=`${sel} / ${total}`;document.getElementById('selected-count').textContent=sel;
+}
+function popupSelectAll(){if(!currentScan)return;for(let i=0;i<currentScan.cols*currentScan.rows;i++)currentScan.selectedTiles.add(i);popupRenderOverlays();renderSelectionOverlays();updatePopupCounter();}
+function popupDeselectAll(){if(!currentScan)return;currentScan.selectedTiles.clear();popupRenderOverlays();renderSelectionOverlays();updatePopupCounter();}
+
+/* ════ SLICE & REVIEW ════ */
+function openReviewIfPossible(){
+    if(slicedCards.length>0)document.getElementById('review-modal').classList.add('open');
+}
+function updateReviewBtn(){
+    const btn=document.getElementById('review-btn');const count=slicedCards.length;
+    document.getElementById('review-card-count').textContent=count;
+    if(count>0){btn.classList.remove('opacity-40','cursor-default');btn.classList.add('hover:bg-slate-600');}
+    else{btn.classList.add('opacity-40','cursor-default');btn.classList.remove('hover:bg-slate-600');}
+}
+
+function sliceCardsAndReview(){
+    if(!currentScan||currentScan.selectedTiles.size===0){alert('Please select at least one card!');return;}
+    closeSelectModal();
+    const src=getTransformedCanvas();
+    const sw=src.width,sh=src.height,l=currentScan.cropLeft,t=currentScan.cropTop,r=currentScan.cropRight,b=currentScan.cropBottom;
+    const tileW=(sw-l-r)/currentScan.cols,tileH=(sh-t-b)/currentScan.rows;
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    const pixelRadius=(radiusMM/(currentScan.cardWidthMM||63))*tileW;
+
+    slicedCards=[];
+    const off=document.createElement('canvas'),ctx=off.getContext('2d');
+    const sorted=[...currentScan.selectedTiles].sort((a,b)=>a-b);let idx=1;
+
+    for(const i of sorted){
+        const col=i%currentScan.cols,row=Math.floor(i/currentScan.cols);
+        const sx=l+col*tileW,sy=t+row*tileH;
+        off.width=Math.round(tileW);off.height=Math.round(tileH);
+        ctx.clearRect(0,0,off.width,off.height);
+        ctx.drawImage(src,sx,sy,tileW,tileH,0,0,off.width,off.height);
+        const originalDataUrl=off.toDataURL('image/png');
+        if(pixelRadius>0.5){
+            ctx.clearRect(0,0,off.width,off.height);
+            ctx.save();ctx.beginPath();roundRectPath(ctx,0,0,off.width,off.height,pixelRadius);ctx.clip();
+            ctx.drawImage(src,sx,sy,tileW,tileH,0,0,off.width,off.height);ctx.restore();
+        }
+        const dataUrl=off.toDataURL('image/png');
+        slicedCards.push({
+            id:i,idx,
+            suffix:String(idx).padStart(3,'0'),   // suffix only, prefix separate
+            name:`${currentPrefix}_${String(idx).padStart(3,'0')}`, // full name for back dropdown only
+            copies:1,
+            dataUrl,originalDataUrl,w:off.width,h:off.height,trim:{l:0,t:0,r:0,b:0}
+        });
+        idx++;
+    }
+    renderReviewGrid();populateBackCardSelect();updateReviewBtn();
+    document.getElementById('review-modal').classList.add('open');
+}
+
+/* Import individual card images directly */
+function importIndividualCards(e){
+    const files=[...e.target.files];if(!files.length)return;
+    let idx=slicedCards.length+1;
+    const promises=files.map(f=>new Promise(res=>{
+        const reader=new FileReader();
+        reader.onload=ev=>{
+            const img=new Image();
+            img.onload=()=>{
+                const off=document.createElement('canvas');off.width=img.width;off.height=img.height;
+                off.getContext('2d').drawImage(img,0,0);
+                const dataUrl=off.toDataURL('image/png');
+                const namePart=f.name.replace(/\.[^/.]+$/,'');
+                slicedCards.push({id:Date.now()+idx,idx,suffix:namePart,name:namePart,copies:1,dataUrl,originalDataUrl:dataUrl,w:img.width,h:img.height,trim:{l:0,t:0,r:0,b:0}});
+                idx++;res();
+            };img.src=ev.target.result;
+        };reader.readAsDataURL(f);
+    }));
+    Promise.all(promises).then(()=>{renderReviewGrid();populateBackCardSelect();updateReviewBtn();});
+    e.target.value='';
+}
+
+function renderReviewGrid(){
+    document.getElementById('review-count').textContent=slicedCards.length;
+    const grid=document.getElementById('review-grid');grid.innerHTML='';
+    slicedCards.forEach(card=>{
+        const div=document.createElement('div');
+        div.className='review-card cursor-pointer select-none';
+        div.dataset.cardId=card.id;
+
+        const imgWrap=document.createElement('div');
+        imgWrap.className='relative checker-bg rounded-t-xl flex items-center justify-center overflow-hidden';
+        imgWrap.style.cssText='height:150px;flex-shrink:0;';
+        const img=document.createElement('img');
+        img.src=card.dataUrl;img.className='max-w-full max-h-full object-contain drop-shadow';
+        imgWrap.appendChild(img);
+
+        // Copies badge (only shown when > 1)
+        const badge=document.createElement('div');
+        badge.className='copies-badge';
+        badge.id=`copies-badge-${card.id}`;
+        badge.textContent=`×${card.copies||1}`;
+        badge.style.display=(card.copies||1)>1?'block':'none';
+        imgWrap.appendChild(badge);
+
+        const label=document.createElement('div');
+        label.className='px-2.5 py-2 text-xs font-mono text-slate-300 truncate text-center border-t border-slate-800 flex-shrink-0';
+        label.id=`card-label-${card.id}`;
+        label.textContent=card.suffix||'(unnamed)';
+
+        div.appendChild(imgWrap);div.appendChild(label);
+
+        // Click = open context menu
+        div.addEventListener('click',e=>{e.stopPropagation();openCardCtxMenu(card.id,e);});
+        // Right-click also opens it
+        div.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();openCardCtxMenu(card.id,e);});
+        grid.appendChild(div);
+    });
+}
+
+/* ── Card Context Menu ── */
+function openCardCtxMenu(id, e){
+    ctxCardId=id;
+    // Highlight selected card, remove from others
+    document.querySelectorAll('.review-card').forEach(el=>{
+        el.classList.toggle('card-selected', parseInt(el.dataset.cardId)===id);
+    });
+    // Show current copies count
+    const card=slicedCards.find(sc=>sc.id===id);
+    document.getElementById('ctx-copies-val').textContent=card?(card.copies||1):1;
+
+    const menu=document.getElementById('card-ctx-menu');
+    menu.classList.add('open');
+    const mx=Math.min(e.clientX,window.innerWidth-180);
+    const my=Math.min(e.clientY,window.innerHeight-140);
+    menu.style.left=mx+'px';menu.style.top=my+'px';
+}
+function closeCardCtxMenu(){
+    document.getElementById('card-ctx-menu').classList.remove('open');
+    // keep highlight until another card is clicked or menu dismissed via Escape
+}
+document.addEventListener('click',e=>{
+    if(!e.target.closest('#card-ctx-menu')&&!e.target.closest('.review-card')){
+        document.getElementById('card-ctx-menu').classList.remove('open');
+        document.querySelectorAll('.review-card').forEach(el=>el.classList.remove('card-selected'));
+        ctxCardId=null;
+    }
+});
+document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+        document.getElementById('card-ctx-menu').classList.remove('open');
+        document.querySelectorAll('.review-card').forEach(el=>el.classList.remove('card-selected'));
+        ctxCardId=null;
+    }
+});
+
+function ctxRename(){
+    const id=ctxCardId;closeCardCtxMenu();
+    const card=slicedCards.find(sc=>sc.id===id);if(!card)return;
+    const label=document.getElementById(`card-label-${id}`);if(!label)return;
+    const oldVal=card.suffix;
+    const inp=document.createElement('input');
+    inp.type='text';inp.value=oldVal;
+    inp.className='w-full bg-slate-950 border border-blue-500 rounded text-xs px-2 py-0.5 font-mono text-center outline-none rename-input-active';
+    inp.style.cssText='display:block;box-sizing:border-box;';
+    label.replaceWith(inp);inp.focus();inp.select();
+    const commit=()=>{
+        const newVal=inp.value.trim()||oldVal;
+        card.suffix=newVal;card.name=newVal;
+        populateBackCardSelect();
+        const newLabel=document.createElement('div');
+        newLabel.className='px-2.5 py-2 text-xs font-mono text-slate-300 truncate text-center border-t border-slate-800 flex-shrink-0';
+        newLabel.id=`card-label-${id}`;newLabel.textContent=newVal;
+        inp.replaceWith(newLabel);
+        // re-attach click handler
+        newLabel.closest('.review-card').querySelector('div[data-card-id]');
+    };
+    inp.addEventListener('blur',commit);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit();}if(e.key==='Escape'){inp.value=oldVal;commit();}});
+}
+function ctxEdit(){const id=ctxCardId;closeCardCtxMenu();openEditModal(id);}
+function ctxChangeCopies(delta){
+    if(!ctxCardId)return;
+    const card=slicedCards.find(sc=>sc.id===ctxCardId);if(!card)return;
+    card.copies=Math.max(1,(card.copies||1)+delta);
+    document.getElementById('ctx-copies-val').textContent=card.copies;
+    // Update badge live without full re-render
+    const badge=document.getElementById(`copies-badge-${ctxCardId}`);
+    if(badge){badge.textContent=`×${card.copies}`;badge.style.display=card.copies>1?'block':'none';}
+    // Also update the review count header to reflect total copies
+    updateReviewBtn();
+}
+function ctxDelete(){
+    const id=ctxCardId;closeCardCtxMenu();
+    slicedCards=slicedCards.filter(c=>c.id!==id);
+    renderReviewGrid();populateBackCardSelect();updateReviewBtn();
+}
+
+function updateCardSuffix(id,val){
+    const c=slicedCards.find(sc=>sc.id===id);
+    if(c){c.suffix=val;c.name=val;populateBackCardSelect();}
+}
+
+/* ════ PDF CARD BACK ════ */
+function toggleCardBackOptions(){document.getElementById('card-back-options').classList.toggle('hidden',!document.getElementById('use-card-back').checked);}
+function switchBackSource(){const v=document.querySelector('input[name="back-source"]:checked').value;document.getElementById('back-upload-panel').classList.toggle('hidden',v!=='upload');document.getElementById('back-fromset-panel').classList.toggle('hidden',v!=='fromset');}
+function handleCardBackUpload(e){const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=ev=>{cardBackDataUrl=ev.target.result;document.getElementById('back-upload-preview').classList.remove('hidden');document.getElementById('back-upload-img').src=cardBackDataUrl;};reader.readAsDataURL(f);}
+function populateBackCardSelect(){
+    const sel=document.getElementById('back-card-select');sel.innerHTML='<option value="">— choose card —</option>';
+    slicedCards.forEach(c=>{const opt=document.createElement('option');opt.value=c.id;opt.textContent=`${currentPrefix}_${c.suffix}`;sel.appendChild(opt);});
+}
+function previewBackFromSet(){const id=parseInt(document.getElementById('back-card-select').value);const c=slicedCards.find(sc=>sc.id===id);if(c){document.getElementById('back-fromset-preview').classList.remove('hidden');document.getElementById('back-fromset-img').src=c.dataUrl;}else document.getElementById('back-fromset-preview').classList.add('hidden');}
+function getCardBackDataUrl(){if(!document.getElementById('use-card-back').checked)return null;const src=document.querySelector('input[name="back-source"]:checked').value;if(src==='upload')return cardBackDataUrl;const id=parseInt(document.getElementById('back-card-select').value);const c=slicedCards.find(sc=>sc.id===id);return c?c.dataUrl:null;}
+
+/* ════ INDIVIDUAL EDIT (zoom+pan canvas) ════ */
+const editCanvasWrap=document.getElementById('edit-canvas-wrap');
+editCanvasWrap.addEventListener('mousedown',e=>{if(e.button===0){eIsPanning=true;eLastX=e.clientX;eLastY=e.clientY;editCanvasWrap.style.cursor='grabbing';}});
+editCanvasWrap.addEventListener('touchstart',e=>{if(e.touches.length===1){eTouchState={x:e.touches[0].clientX,y:e.touches[0].clientY};e.preventDefault();}else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;eTouchState={pinch:true,dist:Math.hypot(dx,dy),zoom:eZoom};e.preventDefault();}},{passive:false});
+editCanvasWrap.addEventListener('touchmove',e=>{
+    if(!eTouchState)return;e.preventDefault();
+    if(!eTouchState.pinch&&e.touches.length===1){ePanX+=e.touches[0].clientX-eTouchState.x;ePanY+=e.touches[0].clientY-eTouchState.y;eTouchState.x=e.touches[0].clientX;eTouchState.y=e.touches[0].clientY;editApplyTransform();}
+    else if(eTouchState.pinch&&e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const nd=Math.hypot(dx,dy);const c=document.getElementById('edit-canvas');const fz=Math.min(editCanvasWrap.clientWidth/c.width,editCanvasWrap.clientHeight/c.height);eZoom=Math.max(fz*0.08,Math.min(eTouchState.zoom*(nd/eTouchState.dist),10));editApplyTransform();}
+},{passive:false});
+editCanvasWrap.addEventListener('touchend',e=>{if(e.touches.length===0)eTouchState=null;});
+function editZoomWheel(e){e.preventDefault();const f=e.deltaY<0?1.15:0.87;const c=document.getElementById('edit-canvas');if(!c.width)return;const w=editCanvasWrap;const fz=Math.min(w.clientWidth/c.width,w.clientHeight/c.height);const old=eZoom;eZoom=Math.max(fz*0.08,Math.min(eZoom*f,10));const rect=w.getBoundingClientRect();ePanX-=(e.clientX-rect.left-ePanX)*(eZoom/old-1);ePanY-=(e.clientY-rect.top-ePanY)*(eZoom/old-1);editApplyTransform();}
+function editApplyTransform(){const c=document.getElementById('edit-canvas');c.style.transform=`translate(${ePanX}px,${ePanY}px) scale(${eZoom})`;}
+function editResetView(){const c=document.getElementById('edit-canvas');if(!c.width)return;const w=editCanvasWrap;eZoom=Math.min((w.clientWidth*.9)/c.width,(w.clientHeight*.9)/c.height);ePanX=(w.clientWidth-c.width*eZoom)/2;ePanY=(w.clientHeight-c.height*eZoom)/2;editApplyTransform();}
+
+function updateEditCropNum(side){
+    const v=parseInt(document.getElementById(`e-crop-${side}`).value)||0;
+    document.getElementById(`e-crop-${side}-num`).value=v;
+    document.getElementById(`e${side}-val`).textContent=v+'px';
+}
+function updateEditCropRange(side){
+    const v=parseInt(document.getElementById(`e-crop-${side}-num`).value)||0;
+    document.getElementById(`e-crop-${side}`).value=v;
+    document.getElementById(`e${side}-val`).textContent=v+'px';
+}
+
+function openEditModal(id){
+    const card=slicedCards.find(sc=>sc.id===id);if(!card)return;
+    editingCardId=id;
+    document.getElementById('edit-card-name-display').textContent=`${currentPrefix}_${card.suffix}`;
+    ['l','r','t','b'].forEach(s=>{
+        const key={l:'e-crop-l',r:'e-crop-r',t:'e-crop-t',b:'e-crop-b'}[s];
+        const trimKey={l:'l',r:'r',t:'t',b:'b'}[s];
+        const maxVal=s==='l'||s==='r'?card.w:card.h;
+        document.getElementById(key).max=maxVal;document.getElementById(key).value=card.trim[trimKey];
+        document.getElementById(key+'-num').max=maxVal;document.getElementById(key+'-num').value=card.trim[trimKey];
+        document.getElementById(`e${s}-val`).textContent=card.trim[trimKey]+'px';
+    });
+    eZoom=1;ePanX=0;ePanY=0;
+    updateEditCanvas();
+    document.getElementById('edit-modal').classList.add('open');
+    // Fit the currently-cropped area into the viewport
+    requestAnimationFrame(()=>{
+        const c=document.getElementById('edit-canvas');
+        if(!c.width)return;
+        const w=editCanvasWrap;
+        const l=card.trim.l,t=card.trim.t,r=card.trim.r,b=card.trim.b;
+        const cropW=card.w-l-r,cropH=card.h-t-b;
+        if(cropW<=0||cropH<=0){editResetView();return;}
+        // Scale so the crop area fills 90% of the wrap
+        eZoom=Math.min((w.clientWidth*.9)/cropW,(w.clientHeight*.9)/cropH);
+        // Center on the crop area
+        ePanX=w.clientWidth/2 - (l+cropW/2)*eZoom;
+        ePanY=w.clientHeight/2 - (t+cropH/2)*eZoom;
+        editApplyTransform();
+    });
+}
+function updateEditCanvas(){
+    const card=slicedCards.find(sc=>sc.id===editingCardId);if(!card)return;
+    const l=parseInt(document.getElementById('e-crop-l').value)||0;
+    const r=parseInt(document.getElementById('e-crop-r').value)||0;
+    const t=parseInt(document.getElementById('e-crop-t').value)||0;
+    const b=parseInt(document.getElementById('e-crop-b').value)||0;
+    const canvas=document.getElementById('edit-canvas'),ctx=canvas.getContext('2d');
+    const img=new Image();
+    img.onload=()=>{
+        canvas.width=card.w;canvas.height=card.h;ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.globalAlpha=0.3;ctx.drawImage(img,0,0);ctx.globalAlpha=1.0;
+        const effW=card.w-l-r,effH=card.h-t-b;
+        if(effW>0&&effH>0){
+            ctx.drawImage(img,l,t,effW,effH,l,t,effW,effH);
+            const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+            const px=card.w/(currentScan?currentScan.cardWidthMM:63);const pr=radiusMM*px;
+            ctx.strokeStyle=pr>0.5?'#22c55e':'#3b82f6';ctx.lineWidth=Math.max(2,2/eZoom);
+            if(pr>0.5){ctx.beginPath();roundRectPath(ctx,l,t,effW,effH,pr);ctx.stroke();}
+            else{ctx.strokeRect(l,t,effW,effH);}
+        }
+        editApplyTransform();
+    };
+    img.src=card.originalDataUrl;
+}
+function saveIndividualCrop(){
+    const card=slicedCards.find(sc=>sc.id===editingCardId);if(!card)return;
+    const l=parseInt(document.getElementById('e-crop-l').value)||0;
+    const r=parseInt(document.getElementById('e-crop-r').value)||0;
+    const t=parseInt(document.getElementById('e-crop-t').value)||0;
+    const b=parseInt(document.getElementById('e-crop-b').value)||0;
+    const effW=card.w-l-r,effH=card.h-t-b;if(effW<=0||effH<=0){alert('Invalid crop dimensions');return;}
+    card.trim={l,t,r,b};
+    const img=new Image();
+    img.onload=()=>{
+        const off=document.createElement('canvas');off.width=effW;off.height=effH;
+        const ctx=off.getContext('2d');
+        const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+        const px=card.w/(currentScan?currentScan.cardWidthMM:63);const pr=radiusMM*px;
+        if(pr>0.5){ctx.save();ctx.beginPath();roundRectPath(ctx,0,0,effW,effH,pr);ctx.clip();ctx.drawImage(img,l,t,effW,effH,0,0,effW,effH);ctx.restore();}
+        else{ctx.drawImage(img,l,t,effW,effH,0,0,effW,effH);}
+        card.dataUrl=off.toDataURL('image/png');
+        renderReviewGrid();document.getElementById('edit-modal').classList.remove('open');
+    };
+    img.src=card.originalDataUrl;
+}
+
+/* ════ ZIP EXPORT with summary TXT ════ */
+async function exportReviewZIP(){
+    if(slicedCards.length===0)return;
+    const zip=new JSZip();
+    for(const card of slicedCards){
+        const copies=card.copies||1;
+        const res=await fetch(card.dataUrl);const blob=await res.blob();
+        if(copies===1){
+            zip.file(`${currentPrefix}_${card.suffix}.png`,blob);
+        } else {
+            for(let c=1;c<=copies;c++){
+                zip.file(`${currentPrefix}_${card.suffix}_${String(c).padStart(2,'0')}.png`,blob);
+            }
+        }
+    }
+
+    // Summary TXT
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    let txt=`Card Grid Splitter — Export Summary\n${'='.repeat(40)}\n`;
+    txt+=`Prefix:       ${currentPrefix}\n`;
+    txt+=`Total cards:  ${slicedCards.length}\n\n`;
+    if(currentScan){
+        txt+=`--- Source Image ---\n`;
+        txt+=`File:         ${currentScan.name}\n`;
+        txt+=`Rotation:     ${currentScan.rotation}°\n`;
+        txt+=`Brightness:   ${currentScan.brightness}%\n`;
+        txt+=`Contrast:     ${currentScan.contrast}%\n`;
+        txt+=`Saturation:   ${currentScan.saturation}%\n`;
+        txt+=`Hue:          ${currentScan.hue}°\n\n`;
+        txt+=`--- Grid & Crop ---\n`;
+        txt+=`Grid:         ${currentScan.cols} cols × ${currentScan.rows} rows\n`;
+        txt+=`Crop Left:    ${currentScan.cropLeft} px\n`;
+        txt+=`Crop Right:   ${currentScan.cropRight} px\n`;
+        txt+=`Crop Top:     ${currentScan.cropTop} px\n`;
+        txt+=`Crop Bottom:  ${currentScan.cropBottom} px\n\n`;
+        txt+=`--- Card Format ---\n`;
+        txt+=`Size:         ${currentScan.cardWidthMM} mm × ${currentScan.cardHeightMM} mm\n`;
+        txt+=`Corner Rad.:  ${radiusMM} mm\n\n`;
+    }
+    txt+=`--- Cards ---\n`;
+    slicedCards.forEach((c,i)=>txt+=`${String(i+1).padStart(3,'0')}. ${currentPrefix}_${c.suffix}.png${(c.copies||1)>1?` (×${c.copies} copies)`:''}\n`);
+    zip.file('_summary.txt',txt);
+
+    const content=await zip.generateAsync({type:'blob'});
+    const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(content),download:`${currentPrefix}_cards.zip`});a.click();
+}
+
+/* ════ PDF EXPORT ════ */
+async function generatePDF(){
+    if(slicedCards.length===0)return;
+    const btn=document.getElementById('pdf-gen-btn');btn.textContent='⏳ Generating...';btn.disabled=true;
+
+    const{jsPDF}=window.jspdf;
+    const cardW=currentScan?currentScan.cardWidthMM:63,cardH=currentScan?currentScan.cardHeightMM:88;
+    const radiusMM=Math.max(0,parseFloat(document.getElementById('corner-radius-mm').value)||0);
+    const batchLabel=document.getElementById('pdf-batch-label').value.trim();
+    const backUrl=getCardBackDataUrl();
+
+    // Expand cards by copies count
+    const expandedCards=[];
+    slicedCards.forEach(card=>{const n=card.copies||1;for(let c=0;c<n;c++)expandedCards.push(card);});
+
+    const pageW=297,pageH=210; // A4 landscape
+    const margin=8,gap=3,namePad=5; // mm below card for filename
+
+    // Best-fit layout on A4 landscape
+    const cols=Math.floor((pageW-margin*2+gap)/(cardW+gap));
+    const rows=Math.floor((pageH-margin*2+gap)/(cardH+gap+namePad));
+    const cardsPerPage=Math.max(1,cols*rows);
+    const startX=(pageW-(cols*cardW+(cols-1)*gap))/2;
+    const startY=(pageH-(rows*(cardH+namePad)+(rows-1)*gap))/2;
+
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+    let cidx=0;
+    while(cidx<expandedCards.length){
+        if(cidx>0)doc.addPage();
+        const pageCards=expandedCards.slice(cidx,cidx+cardsPerPage);
+
+        // Page label top-center
+        if(batchLabel){
+            doc.setFontSize(7);doc.setTextColor(150,150,150);
+            doc.text(batchLabel,pageW/2,4,{align:'center'});
+        }
+
+        // Front cards
+        for(let i=0;i<pageCards.length;i++){
+            const c=i%cols,r=Math.floor(i/cols);
+            const x=startX+c*(cardW+gap),y=startY+r*(cardH+namePad+gap);
+            addRoundedCardToPDF(doc,pageCards[i].dataUrl,x,y,cardW,cardH,radiusMM);
+            // filename under card
+            doc.setFontSize(5);doc.setTextColor(120,130,140);
+            doc.text(`${currentPrefix}_${pageCards[i].suffix}`,x+cardW/2,y+cardH+namePad-1,{align:'center'});
+        }
+
+        // Back page
+        if(backUrl){
+            doc.addPage();
+            if(batchLabel){doc.setFontSize(7);doc.setTextColor(150,150,150);doc.text(batchLabel+' — Back',pageW/2,4,{align:'center'});}
+            for(let i=0;i<pageCards.length;i++){
+                const colFront=i%cols,r=Math.floor(i/cols);
+                const colBack=cols-1-colFront;
+                const x=startX+colBack*(cardW+gap),y=startY+r*(cardH+namePad+gap);
+                addRoundedCardToPDF(doc,backUrl,x,y,cardW,cardH,radiusMM);
+                doc.setFontSize(5);doc.setTextColor(120,130,140);
+                doc.text(`${currentPrefix}_${pageCards[i].suffix}`,x+cardW/2,y+cardH+namePad-1,{align:'center'});
+            }
+        }
+        cidx+=cardsPerPage;
+    }
+
+    const pdfBlob=doc.output('blob');
+    document.getElementById('pdf-preview-iframe').src=URL.createObjectURL(pdfBlob);
+    btn.textContent='Generate PDF Preview';btn.disabled=false;
+}
+
+function addRoundedCardToPDF(doc,url,x,y,w,h,r){
+    const fmt=url.includes('jpeg')||url.includes('JPEG')?'JPEG':'PNG';
+    if(r>0.3){doc.saveGraphicsState();doc.roundedRect(x,y,w,h,r,r);doc.clip();doc.addImage(url,fmt,x,y,w,h);doc.restoreGraphicsState();}
+    else{doc.addImage(url,fmt,x,y,w,h);}
+}
+
+window.onload=()=>console.log('%c✅ Card Grid Splitter ready','color:#22c55e;font-weight:bold');
+</script>
+</body>
+</html>

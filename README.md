@@ -1,5 +1,8 @@
-# Card Cropper
+# Card Sheet Generator
 
-Online-Tool for editing scanned boardgame cards, enhancing image attributes like color and cropping each card into their own file.
+Online-Tool for preparing print sheets for playingcards, refining scans and slicing them.
+Scan or download some cards, retouch faded colors, fix janky alignments, export, print and play them.
 
-View [here](https://janniselef.github.io/card-cropper/).
+Try it yourself [here](https://janniselef.github.io/card-cropper/).
+
+See more information and usage examples [here](https://janniselef.github.io/card-cropper/).

@@ -178,6 +178,11 @@
         <h1 class="text-base font-semibold whitespace-nowrap">Card Sheet Generator</h1>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
+        <label title="Import JSON set" class="w-9 h-9 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-xl cursor-pointer transition-colors flex-shrink-0" style="border:1px solid #334155;">
+            <!-- Download/save to disk: tray with arrow pointing down INTO it -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/><polyline points="8 13 12 17 16 13"/><line x1="12" y1="17" x2="12" y2="7"/></svg>
+            <input type="file" accept=".json,application/json" class="hidden" onchange="importSetJSON(event)">
+        </label>
         <button onclick="openSelectModal()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-2xl font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors">
             🃏 Select Cards <span id="selected-count" class="bg-white/20 px-2 py-0.5 rounded-xl text-xs">0</span>
         </button>
@@ -368,8 +373,10 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <!-- Import pre-cut card images directly -->
-                    <label class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs cursor-pointer transition-colors whitespace-nowrap flex items-center gap-1" title="Import already-cut card images — opens edit for each">
-                        ➕ Add Cards
+                    <label class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs cursor-pointer transition-colors whitespace-nowrap flex items-center gap-1.5" title="Import already-cut card images — opens edit for each">
+                        <!-- Image with plus: distinct from the JSON import icon -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/><line x1="19" y1="3" x2="19" y2="9"/><line x1="16" y1="6" x2="22" y2="6"/></svg>
+                        Add Cards
                         <input type="file" id="import-cards-upload" accept="image/*" multiple class="hidden" onchange="importIndividualCards(event)">
                     </label>
                     <!-- Split a new sheet image into this set -->
@@ -389,6 +396,23 @@
                 <button onclick="exportReviewZIP()" class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-semibold transition-colors text-sm">
                     Download ZIP (Images)
                 </button>
+
+                <hr class="border-slate-800">
+                <h3 class="font-semibold text-slate-300">💾 Set JSON</h3>
+                <div class="flex gap-2">
+                    <button onclick="exportSetJSON()" class="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-semibold transition-colors" style="border:1px solid #334155;">
+                        <!-- Share/upload: arrow pointing up out of a box -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                        Export JSON
+                    </button>
+                    <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-semibold transition-colors cursor-pointer" style="border:1px solid #334155;">
+                        <!-- Save to disk: monitor with arrow down into it -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/><polyline points="8 13 12 17 16 13"/><line x1="12" y1="17" x2="12" y2="7"/></svg>
+                        Import JSON
+                        <input type="file" accept=".json,application/json" class="hidden" onchange="importSetJSON(event)">
+                    </label>
+                </div>
+                <div class="text-xs text-slate-600">Saves all cards, groups, back assignments and settings. Restore a session anytime.</div>
 
                 <hr class="border-slate-800">
                 <h3 class="font-semibold text-slate-300">📄 PDF Print Sheet</h3>
@@ -438,17 +462,40 @@
                     Generate PDF Preview
                 </button>
 
+                <button onclick="openPdfPopup()" id="pdf-view-btn" class="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl font-semibold transition-colors text-sm hidden" style="border:1px solid #334155;">
+                    👁 View Preview
+                </button>
+
                 <label class="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" id="pdf-summary-page" checked class="w-4 h-4 accent-emerald-500 rounded">
                     <span class="text-xs text-slate-300">Include summary page (last)</span>
                 </label>
             </div>
 
-            <div class="flex-1 bg-slate-950 p-2 flex flex-col" style="min-height:200px;">
-                <div class="text-xs text-slate-500 text-center mb-1">PDF Preview</div>
-                <iframe id="pdf-preview-iframe" class="flex-1 w-full bg-white rounded-lg border border-slate-800"></iframe>
-            </div>
+            <!-- hidden iframe just to hold the blob URL (unused on file://) -->
+            <iframe id="pdf-preview-iframe" style="display:none;"></iframe>
         </div>
+    </div>
+</div>
+
+<!-- PDF FULLSCREEN POPUP -->
+<div id="pdf-popup-overlay" onclick="closePdfPopupOnBackdrop(event)"
+     style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(2,6,23,.92);flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+    <div id="pdf-popup-inner" onclick="event.stopPropagation()"
+         style="width:100%;max-width:1200px;height:100%;max-height:calc(100dvh - 40px);background:#0f172a;border:1px solid #1e293b;border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 40px 80px -12px rgba(0,0,0,.9);">
+        <!-- Header bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e293b;flex-shrink:0;gap:10px;">
+            <button onclick="closePdfPopup()" style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:#334155;border:1px solid #475569;border-radius:10px;color:#e2e8f0;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+                ← Back
+            </button>
+            <span style="color:#94a3b8;font-size:12px;font-weight:500;">PDF Preview</span>
+            <button onclick="downloadPdf()" style="display:flex;align-items:center;gap:7px;padding:6px 16px;background:#0f766e;border:1px solid #0d9488;border-radius:10px;color:#e2e8f0;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='#0d9488'" onmouseout="this.style.background='#0f766e'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download PDF
+            </button>
+        </div>
+        <!-- PDF rendered inside — embed works on http/https; on file:// we show a fallback -->
+        <div id="pdf-popup-body" style="flex:1;display:flex;flex-direction:column;min-height:0;border-radius:0 0 20px 20px;overflow:hidden;"></div>
     </div>
 </div>
 
@@ -2259,8 +2306,254 @@ async function generatePDF(){
     }
 
     const pdfBlob=doc.output('blob');
-    document.getElementById('pdf-preview-iframe').src=URL.createObjectURL(pdfBlob);
+    const blobUrl=URL.createObjectURL(pdfBlob);
+    document.getElementById('pdf-preview-iframe').src=blobUrl;
+    // store for popup & download
+    window._lastPdfBlobUrl=blobUrl;
+    window._lastPdfBlob=pdfBlob;
+    // show View Preview button
+    const viewBtn=document.getElementById('pdf-view-btn');
+    viewBtn.classList.remove('hidden');
     btn.textContent='Generate PDF Preview';btn.disabled=false;
+    // auto-open popup
+    openPdfPopup();
+}
+
+function openPdfPopup(){
+    const url=window._lastPdfBlobUrl;if(!url)return;
+    const body=document.getElementById('pdf-popup-body');
+    // Detect file:// — iframe/embed blocked by browser security on file origins
+    const isFile=location.protocol==='file:';
+    if(isFile){
+        // Fallback: show open-in-new-tab button
+        body.innerHTML=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#94a3b8;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <div style="font-size:14px;font-weight:600;color:#e2e8f0;">PDF ready</div>
+            <div style="font-size:12px;color:#64748b;text-align:center;max-width:320px;">Inline preview is blocked when opening as a local file.<br>Use the button below to view or download.</div>
+            <div style="display:flex;gap:10px;">
+                <button onclick="window.open(window._lastPdfBlobUrl,'_blank')" style="display:flex;align-items:center;gap:7px;padding:8px 18px;background:#1e40af;border:1px solid #3b82f6;border-radius:10px;color:#e2e8f0;font-size:13px;font-weight:600;cursor:pointer;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    Open in new tab
+                </button>
+                <button onclick="downloadPdf()" style="display:flex;align-items:center;gap:7px;padding:8px 18px;background:#0f766e;border:1px solid #0d9488;border-radius:10px;color:#e2e8f0;font-size:13px;font-weight:600;cursor:pointer;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download PDF
+                </button>
+            </div>
+        </div>`;
+    } else {
+        body.innerHTML=`<iframe src="${url}" style="flex:1;width:100%;border:none;background:#fff;border-radius:0 0 20px 20px;height:100%;"></iframe>`;
+    }
+    const overlay=document.getElementById('pdf-popup-overlay');
+    overlay.style.display='flex';
+    document.body.style.overflow='hidden';
+}
+function closePdfPopup(){
+    document.getElementById('pdf-popup-overlay').style.display='none';
+    document.body.style.overflow='';
+}
+function closePdfPopupOnBackdrop(e){
+    if(e.target===document.getElementById('pdf-popup-overlay'))closePdfPopup();
+}
+function downloadPdf(){
+    const blob=window._lastPdfBlob;if(!blob)return;
+    const prefix=currentPrefix||'cards';
+    const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${prefix}_sheet.pdf`});
+    a.click();
+}
+
+/* ════ JSON SET EXPORT / IMPORT ════ */
+function exportSetJSON(){
+    const getVal=id=>{const el=document.getElementById(id);return el?(el.type==='checkbox'?el.checked:el.value):null;};
+    const settings={
+        prefix: currentPrefix,
+        tilePad: {...tilePad},
+        backGroups: [...backGroups],
+        cornerRadiusMM: getVal('corner-radius-mm'),
+        pdfBatchLabel: getVal('pdf-batch-label'),
+        pdfSummaryPage: getVal('pdf-summary-page'),
+        useCardBack: getVal('use-card-back'),
+        backSource: document.querySelector('input[name="back-source"]:checked')?.value||'fromset',
+        backCardSelectTileId: (()=>{
+            const id=parseInt(getVal('back-card-select'));
+            const c=slicedCards.find(sc=>sc.id===id);
+            return c?c.id:null;
+        })(),
+        scan: currentScan ? {
+            name: currentScan.name,
+            cols: currentScan.cols,
+            rows: currentScan.rows,
+            rotation: currentScan.rotation,
+            cropLeft: currentScan.cropLeft,
+            cropRight: currentScan.cropRight,
+            cropTop: currentScan.cropTop,
+            cropBottom: currentScan.cropBottom,
+            brightness: currentScan.brightness,
+            contrast: currentScan.contrast,
+            saturation: currentScan.saturation,
+            hue: currentScan.hue,
+            cardWidthMM: currentScan.cardWidthMM,
+            cardHeightMM: currentScan.cardHeightMM,
+            selectedTiles: [...(currentScan.selectedTiles||[])],
+        } : null,
+    };
+
+    // Cards: NO dataUrl — only metadata + tile id (grid position) + trim for re-slicing
+    const cards = slicedCards.map(c=>({
+        id: c.id,           // tile index = grid position for re-slicing
+        idx: c.idx,
+        suffix: c.suffix,
+        copies: c.copies||1,
+        groupId: c.groupId??null,
+        isBackCard: c.isBackCard||false,
+        trim: c.trim||null,
+    }));
+
+    const payload = {version:2, settings, cards};
+    const blob = new Blob([JSON.stringify(payload)],{type:'application/json'});
+    const a = Object.assign(document.createElement('a'),{
+        href: URL.createObjectURL(blob),
+        download: `${currentPrefix||'cardset'}_settings.json`,
+    });
+    a.click();
+}
+
+async function importSetJSON(event){
+    const file=event.target.files[0];if(!file)return;
+    event.target.value='';
+    let payload;
+    try{payload=JSON.parse(await file.text());}
+    catch(e){alert('Invalid JSON file.');return;}
+    if(!payload.cards){alert('Unrecognised format.');return;}
+
+    const {settings,cards}=payload;
+    const isV1=payload.version===1; // old format had dataUrls
+
+    // ── Restore settings ──
+    if(settings.prefix){
+        currentPrefix=settings.prefix;
+        const el=document.getElementById('prefix-input');if(el)el.value=currentPrefix;
+    }
+    if(settings.tilePad){
+        Object.assign(tilePad,settings.tilePad);
+        ['left','right','top','bottom'].forEach(d=>{
+            const sl=document.getElementById(`tile-pad-${d}`),num=document.getElementById(`tile-pad-${d}-num`);
+            if(sl)sl.value=tilePad[d];if(num)num.value=tilePad[d];
+        });
+    }
+    if(Array.isArray(settings.backGroups))backGroups=settings.backGroups.slice(0,5);
+    const setEl=(id,val)=>{const el=document.getElementById(id);if(!el)return;el.type==='checkbox'?el.checked=val:el.value=val;};
+    if(settings.cornerRadiusMM!=null){setEl('corner-radius-mm',settings.cornerRadiusMM);setEl('corner-radius-mm-num',settings.cornerRadiusMM);}
+    if(settings.pdfBatchLabel!=null)setEl('pdf-batch-label',settings.pdfBatchLabel);
+    if(settings.pdfSummaryPage!=null)setEl('pdf-summary-page',settings.pdfSummaryPage);
+    if(settings.useCardBack!=null){setEl('use-card-back',settings.useCardBack);toggleCardBackOptions();}
+    if(settings.backSource){
+        const r=document.querySelector(`input[name="back-source"][value="${settings.backSource}"]`);
+        if(r){r.checked=true;switchBackSource();}
+    }
+
+    // ── v1 compat: had full dataUrls ──
+    if(isV1){
+        slicedCards=cards.map(c=>({
+            id:c.id,idx:c.idx||1,suffix:c.suffix||'',copies:c.copies||1,
+            groupId:c.groupId??undefined,isBackCard:c.isBackCard||false,
+            trim:c.trim||{l:0,t:0,r:0,b:0,rot:0},
+            dataUrl:c.dataUrl,originalDataUrl:c.dataUrl,
+            w:0,h:0,marginPx:0,offsetX:0,offsetY:0,
+        }));
+        renderReviewGrid();populateBackCardSelect();updateReviewBtn();
+        document.getElementById('review-modal').classList.add('open');
+        return;
+    }
+
+    // ── v2: re-slice from current scan ──
+    const sc=settings.scan;
+
+    // Apply saved scan params if a scan is loaded
+    if(sc&&currentScan){
+        ['cols','rows','rotation','cropLeft','cropRight','cropTop','cropBottom',
+         'brightness','contrast','saturation','hue','cardWidthMM','cardHeightMM']
+            .forEach(k=>{if(sc[k]!=null)currentScan[k]=sc[k];});
+        if(Array.isArray(sc.selectedTiles))currentScan.selectedTiles=new Set(sc.selectedTiles);
+        syncAllControls();
+    }
+
+    if(!currentScan){
+        // No scan loaded — restore metadata only, dataUrls will be missing (cards show broken img)
+        slicedCards=cards.map(c=>({
+            id:c.id,idx:c.idx||1,suffix:c.suffix||'',copies:c.copies||1,
+            groupId:c.groupId??undefined,isBackCard:c.isBackCard||false,
+            trim:c.trim||{l:0,t:0,r:0,b:0,rot:0},
+            dataUrl:'',originalDataUrl:'',w:0,h:0,marginPx:0,offsetX:0,offsetY:0,
+        }));
+        renderReviewGrid();populateBackCardSelect();updateReviewBtn();
+        document.getElementById('review-modal').classList.add('open');
+        alert(`⚠️ Settings restored for ${cards.length} cards.\nNo scan image is loaded — please load the original scan to regenerate card images.`);
+        return;
+    }
+
+    // Re-slice every card from the scan using saved tile id + trim
+    const src=getTransformedCanvas();
+    const radiusMM=parseFloat(document.getElementById('corner-radius-mm').value)||0;
+    slicedCards=[];
+    for(const c of cards){
+        const tileIdx=c.id; // tile index = grid position
+        const col=tileIdx%currentScan.cols, row=Math.floor(tileIdx/currentScan.cols);
+        if(col>=currentScan.cols||row>=currentScan.rows)continue; // safety
+        const s=sliceWithMargin(src,col,row,currentScan,radiusMM);
+        const card={
+            id:tileIdx,idx:c.idx||1,
+            suffix:c.suffix||String(c.idx).padStart(3,'0'),
+            name:`${currentPrefix}_${c.suffix}`,
+            copies:c.copies||1,
+            groupId:c.groupId??undefined,
+            isBackCard:c.isBackCard||false,
+            trim:c.trim||{l:0,t:0,r:0,b:0,rot:0},
+            dataUrl:s.dataUrl,originalDataUrl:s.originalDataUrl,
+            w:s.w,h:s.h,marginPx:s.marginPx,offsetX:s.offsetX,offsetY:s.offsetY,
+        };
+        // Re-apply saved trim if non-zero
+        if(c.trim&&(c.trim.l||c.trim.t||c.trim.r||c.trim.b||c.trim.rot)){
+            const trimmed=applyTrimToCard(card);
+            if(trimmed)card.dataUrl=trimmed;
+        }
+        slicedCards.push(card);
+    }
+
+    renderReviewGrid();populateBackCardSelect();updateReviewBtn();
+
+    // Restore back-card-select
+    if(settings.backCardSelectTileId!=null){
+        const sel=document.getElementById('back-card-select');
+        if(sel){sel.value=settings.backCardSelectTileId;previewBackFromSet();}
+    }
+
+    document.getElementById('review-modal').classList.add('open');
+    const backCardCount=slicedCards.filter(c=>c.isBackCard).length;
+    console.log(`✅ Imported ${slicedCards.length} cards (${backCardCount} back cards) from "${file.name}".`);
+}
+
+// Helper: apply trim to a card's dataUrl, returns new dataUrl or null
+function applyTrimToCard(card){
+    try{
+        const img=new Image();
+        img.src=card.originalDataUrl;
+        if(!img.complete||img.naturalWidth===0)return null;
+        const t=card.trim;
+        const ox=card.offsetX,oy=card.offsetY,cw=card.w,ch=card.h;
+        const sl=Math.round(t.l*cw/100),st=Math.round(t.t*ch/100),
+              sr=Math.round(t.r*cw/100),sb=Math.round(t.b*ch/100);
+        const nw=cw-sl-sr,nh=ch-st-sb;
+        if(nw<1||nh<1)return null;
+        const off=document.createElement('canvas');off.width=nw;off.height=nh;
+        const ctx=off.getContext('2d');
+        if(t.rot){
+            ctx.save();ctx.translate(nw/2,nh/2);ctx.rotate(t.rot*Math.PI/180);ctx.translate(-nw/2,-nh/2);
+        }
+        ctx.drawImage(img,ox+sl,oy+st,nw,nh,0,0,nw,nh);
+        if(t.rot)ctx.restore();
+        return off.toDataURL('image/png');
+    }catch(e){return null;}
 }
 
 function addRoundedCardToPDF(doc,url,x,y,w,h,r){
